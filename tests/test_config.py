@@ -71,3 +71,43 @@ def test_load_machines_lookup_by_id_raises_on_missing(tmp_machines_toml):
     import pytest as _pytest
     with _pytest.raises(KeyError):
         registry["nonexistent"]
+
+
+from jkw_obs_mcp.config import detect_machine_id
+from jkw_obs_mcp.errors import UnknownMachineError
+
+
+def test_detect_dreamingmachine_on_mac(tmp_machines_toml):
+    registry = load_machines(tmp_machines_toml)
+    machine_id = detect_machine_id(
+        registry, hostname="dreamingmachine", os_name="darwin"
+    )
+    assert machine_id == "dreamingmachine"
+
+
+def test_detect_scs_on_linux(tmp_machines_toml):
+    registry = load_machines(tmp_machines_toml)
+    machine_id = detect_machine_id(registry, hostname="callosum", os_name="linux")
+    assert machine_id == "scs"
+
+
+def test_detect_is_case_sensitive(tmp_machines_toml):
+    registry = load_machines(tmp_machines_toml)
+    # tealw alias is "mxj-tealitx" lowercase — uppercase should NOT match.
+    with pytest.raises(UnknownMachineError):
+        detect_machine_id(registry, hostname="MXJ-TEALITX", os_name="linux")
+
+
+def test_detect_uses_os_as_tiebreaker(tmp_machines_toml):
+    registry = load_machines(tmp_machines_toml)
+    # dreamingmachine is os=darwin; same hostname on linux must NOT match.
+    with pytest.raises(UnknownMachineError):
+        detect_machine_id(registry, hostname="dreamingmachine", os_name="linux")
+
+
+def test_detect_raises_unknown_machine_on_no_match(tmp_machines_toml):
+    registry = load_machines(tmp_machines_toml)
+    with pytest.raises(UnknownMachineError) as excinfo:
+        detect_machine_id(registry, hostname="random-laptop", os_name="darwin")
+    assert excinfo.value.hostname == "random-laptop"
+    assert excinfo.value.os_name == "darwin"

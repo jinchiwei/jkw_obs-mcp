@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import platform
+import socket
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from jkw_obs_mcp.errors import UnknownMachineError
 
 
 @dataclass(frozen=True)
@@ -82,3 +86,29 @@ def load_machines(path: Path) -> MachineRegistry:
             os=body.get("os", ""),
         )
     return MachineRegistry(entries)
+
+
+def detect_machine_id(
+    registry: MachineRegistry,
+    *,
+    hostname: str | None = None,
+    os_name: str | None = None,
+) -> str:
+    """Resolve the current machine's id from hostname + os.
+
+    Hostname matching is CASE-SENSITIVE. os acts as a tiebreaker. Both args
+    are optional for testability — if omitted, uses socket.gethostname() and
+    platform.system().
+    """
+    if hostname is None:
+        hostname = socket.gethostname()
+        # Strip domain suffix e.g. "dreamingmachine.local" -> "dreamingmachine"
+        hostname = hostname.split(".", 1)[0]
+    if os_name is None:
+        os_name = platform.system().lower()
+
+    for entry in registry:
+        if hostname in entry.hostname_aliases and entry.os == os_name:
+            return entry.machine_id
+
+    raise UnknownMachineError(hostname=hostname, os_name=os_name)
