@@ -1,0 +1,37 @@
+# Hostname -> machine_id registry. Used by install.sh and MCP startup
+# to auto-detect which machine the server is running on.
+#
+# Hostname matching is CASE-SENSITIVE. The os field is a tiebreaker for
+# future cases like teal-native vs tealw on the same physical hardware.
+#
+# To add a new machine:
+#   1. Add an entry below.
+#   2. Bump the file's git history (commit + push).
+#   3. On the new machine, git pull and re-run install.sh.
+
+[dreamingmachine]
+hostname_aliases = ["dreamingmachine"]
+os = "darwin"
+
+[scs]
+hostname_aliases = ["callosum"]
+os = "linux"
+
+[fac]
+hostname_aliases = ["chpc-ucsf-login-vm1"]
+os = "linux"
+
+[cph]
+hostname_aliases = ["c15pu01"]
+os = "linux"
+
+[teal]
+# WSL Linux on the MXJ-TEALITX physical machine. Native Windows side
+# is deferred to v1.5+.
+hostname_aliases = ["mxj-tealitx"]
+os = "linux"
+
+[cdx]
+# AWS SageMaker default hostname.
+hostname_aliases = ["default"]
+os = "linux"
