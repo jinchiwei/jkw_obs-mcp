@@ -44,3 +44,30 @@ id = "dreamingmachine"
 
     assert "~" not in str(cfg.vault_root)
     assert str(cfg.vault_root).endswith("/vault")
+
+
+from jkw_obs_mcp.config import MachineRegistry, load_machines
+
+
+def test_load_machines_returns_registry(tmp_machines_toml):
+    registry = load_machines(tmp_machines_toml)
+
+    assert isinstance(registry, MachineRegistry)
+    assert "dreamingmachine" in registry
+    assert "scs" in registry
+    assert "teal" in registry
+
+    dm = registry["dreamingmachine"]
+    assert dm.hostname_aliases == ["dreamingmachine"]
+    assert dm.os == "darwin"
+
+    teal = registry["teal"]
+    assert teal.hostname_aliases == ["mxj-tealitx"]
+    assert teal.os == "linux"
+
+
+def test_load_machines_lookup_by_id_raises_on_missing(tmp_machines_toml):
+    registry = load_machines(tmp_machines_toml)
+    import pytest as _pytest
+    with _pytest.raises(KeyError):
+        registry["nonexistent"]
