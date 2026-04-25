@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Venv
+.venv/
+venv/
+.python-version-local
+
+# Runtime data (per machine, regeneratable)
+data/
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
