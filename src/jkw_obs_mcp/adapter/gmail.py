@@ -12,17 +12,42 @@ Console OAuth desktop flow (covered in Plan 6 installer).
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any  # noqa: F401 — used by GmailAdapter methods added in Task 3
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+
+
+@dataclass(frozen=True)
+class EmailMessage:
+    """One message in a thread, flattened."""
+
+    message_id: str
+    sender: str           # raw "Name <email>" or just "email"
+    recipient: str
+    subject: str
+    date: str             # raw RFC2822 string from headers
+    body: str             # extracted plain text or stripped HTML
+    is_from_self: bool    # set by adapter using getProfile() email
+
+
+@dataclass(frozen=True)
+class EmailThread:
+    """A Gmail thread with its messages in chronological order."""
+
+    thread_id: str
+    subject: str
+    messages: list[EmailMessage]
 
 
 class GmailAdapter:
@@ -43,6 +68,7 @@ class GmailAdapter:
         self.client_secret_path = client_secret_path
         self.token_path = token_path
         self._allow_interactive = _allow_interactive
+        self._cached_user_email: str | None = None
 
     def _load_credentials(self) -> Credentials | None:
         """Load credentials from token_path, or return None if missing/invalid."""
@@ -114,3 +140,85 @@ class GmailAdapter:
             return creds
 
         return None
+
+    def fetch_recent_threads(
+        self, *, query: str, max_threads: int = 50
+    ) -> list[EmailThread]:
+        """Return parsed threads matching `query`. Returns [] on any failure."""
+        creds = self._ensure_credentials()
+        if creds is None:
+            return []
+
+        try:
+            service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+            # Cache the user's own email address (used to mark is_from_self)
+            if self._cached_user_email is None:
+                profile = service.users().getProfile(userId="me").execute()
+                self._cached_user_email = profile.get("emailAddress")
+
+            list_resp = (
+                service.users()
+                .threads()
+                .list(userId="me", q=query, maxResults=max_threads)
+                .execute()
+            )
+            thread_stubs = list_resp.get("threads", [])
+
+            results: list[EmailThread] = []
+            for stub in thread_stubs:
+                detail = (
+                    service.users()
+                    .threads()
+                    .get(userId="me", id=stub["id"], format="full")
+                    .execute()
+                )
+                results.append(self._parse_thread(detail))
+            return results
+        except Exception:
+            # Graceful degrade — log via stderr in real ops, but never raise.
+            # Daily review's email section becomes empty for this run.
+            return []
+
+    def _parse_thread(self, detail: dict) -> EmailThread:
+        messages = [self._parse_message(m) for m in detail.get("messages", [])]
+        subject = messages[0].subject if messages else "(no subject)"
+        return EmailThread(
+            thread_id=detail["id"],
+            subject=subject,
+            messages=messages,
+        )
+
+    def _parse_message(self, msg: dict) -> EmailMessage:
+        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        sender = headers.get("From", "")
+        is_from_self = bool(
+            self._cached_user_email and self._cached_user_email in sender
+        )
+        body = _extract_message_body(msg.get("payload", {}))
+        return EmailMessage(
+            message_id=msg.get("id", ""),
+            sender=sender,
+            recipient=headers.get("To", ""),
+            subject=headers.get("Subject", "(no subject)"),
+            date=headers.get("Date", ""),
+            body=body,
+            is_from_self=is_from_self,
+        )
+
+
+def _extract_message_body(payload: dict) -> str:
+    """Stub — full implementation lands in Task 4 (body extraction).
+
+    This intentionally handles only the simple top-level text/plain case.
+    Task 4 replaces this with multipart-aware extraction. Test fixtures in
+    Task 3 only use simple text/plain payloads.
+    """
+    mime = payload.get("mimeType", "")
+    body_data = payload.get("body", {}).get("data")
+    if mime == "text/plain" and body_data:
+        try:
+            return base64.urlsafe_b64decode(body_data).decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+    return ""
