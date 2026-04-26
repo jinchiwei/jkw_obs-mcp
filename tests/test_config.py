@@ -111,3 +111,47 @@ def test_detect_raises_unknown_machine_on_no_match(tmp_machines_toml):
         detect_machine_id(registry, hostname="random-laptop", os_name="darwin")
     assert excinfo.value.hostname == "random-laptop"
     assert excinfo.value.os_name == "darwin"
+
+
+def test_load_config_includes_embeddings_section(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        """
+[paths]
+vault_root = "/some/vault"
+
+[machine]
+id = "dreamingmachine"
+
+[embeddings]
+backend = "fastembed"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+db_path = "~/data/embeddings.db"
+"""
+    )
+
+    cfg = load_config(cfg_file)
+
+    assert cfg.embeddings.backend == "fastembed"
+    assert cfg.embeddings.model == "sentence-transformers/all-MiniLM-L6-v2"
+    assert "~" not in str(cfg.embeddings.db_path)
+
+
+def test_load_config_uses_embeddings_defaults_when_section_absent(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        """
+[paths]
+vault_root = "/some/vault"
+
+[machine]
+id = "dreamingmachine"
+"""
+    )
+
+    cfg = load_config(cfg_file)
+
+    assert cfg.embeddings.backend == "fastembed"
+    assert cfg.embeddings.model == "sentence-transformers/all-MiniLM-L6-v2"
+    # default db_path is under <repo_root>/data/embeddings.db
+    assert str(cfg.embeddings.db_path).endswith("data/embeddings.db")

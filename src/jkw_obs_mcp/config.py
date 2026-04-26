@@ -5,10 +5,19 @@ from __future__ import annotations
 import platform
 import socket
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from jkw_obs_mcp.errors import UnknownMachineError
+
+
+@dataclass(frozen=True)
+class EmbeddingsConfig:
+    """Embeddings backend configuration."""
+
+    backend: str = "fastembed"
+    model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    db_path: Path = Path("data/embeddings.db")
 
 
 @dataclass(frozen=True)
@@ -18,16 +27,18 @@ class Config:
     vault_root: Path
     machine_id: str
     daily_review_enabled: bool = False
+    embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
 
 
 def load_config(path: Path) -> Config:
-    """Load Config from a TOML file. Expands ~ in vault_root."""
+    """Load Config from a TOML file. Expands ~ in vault_root + db_path."""
     with open(path, "rb") as f:
         data = tomllib.load(f)
 
     paths = data.get("paths", {})
     machine = data.get("machine", {})
     generation = data.get("generation", {})
+    emb = data.get("embeddings", {})
 
     vault_root_str = paths.get("vault_root", "")
     if not vault_root_str:
@@ -38,10 +49,20 @@ def load_config(path: Path) -> Config:
     if not machine_id:
         raise ValueError(f"{path}: [machine].id is required")
 
+    # Embeddings section is optional — defaults from EmbeddingsConfig apply.
+    db_path_str = emb.get("db_path", "data/embeddings.db")
+    db_path = Path(db_path_str).expanduser()
+    embeddings = EmbeddingsConfig(
+        backend=emb.get("backend", "fastembed"),
+        model=emb.get("model", "sentence-transformers/all-MiniLM-L6-v2"),
+        db_path=db_path,
+    )
+
     return Config(
         vault_root=vault_root,
         machine_id=machine_id,
         daily_review_enabled=generation.get("daily_review_enabled", False),
+        embeddings=embeddings,
     )
 
 
