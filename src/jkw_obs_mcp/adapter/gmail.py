@@ -1,8 +1,7 @@
 """GmailAdapter — read-only Gmail access via Google's API client.
 
 This module handles two concerns: (1) credential cache + refresh, and
-(2) thread fetch. This file currently implements (1); thread fetch lands
-in the next plan task.
+(2) thread fetch. Both are implemented here.
 
 Token storage: ~/.config/jkw-obs-mcp/gmail-token.json (mode 600).
 Client secret: ~/.config/jkw-obs-mcp/google-client-secret.json (mode 600).
@@ -51,7 +50,7 @@ class EmailThread:
 
 
 class GmailAdapter:
-    """Owns the OAuth credential lifecycle and (later) thread fetching.
+    """Owns the OAuth credential lifecycle and Gmail thread fetching.
 
     Construction does no I/O. Credential load happens on first call to
     _ensure_credentials(). That makes the adapter safe to instantiate at
@@ -152,10 +151,12 @@ class GmailAdapter:
         try:
             service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-            # Cache the user's own email address (used to mark is_from_self)
+            # Cache the user's own email address (used to mark is_from_self).
+            # Use empty-string sentinel after a failed lookup so we don't
+            # re-fetch on every call if getProfile returns an unexpected shape.
             if self._cached_user_email is None:
                 profile = service.users().getProfile(userId="me").execute()
-                self._cached_user_email = profile.get("emailAddress")
+                self._cached_user_email = profile.get("emailAddress") or ""
 
             list_resp = (
                 service.users()

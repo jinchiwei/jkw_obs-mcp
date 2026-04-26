@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+import base64
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from jkw_obs_mcp.adapter.gmail import EmailMessage, EmailThread, GmailAdapter
 
@@ -49,7 +48,6 @@ def _fake_message(
 
 
 def _b64url(s: str) -> str:
-    import base64
     return base64.urlsafe_b64encode(s.encode("utf-8")).decode("ascii")
 
 
@@ -124,16 +122,20 @@ def test_fetch_groups_messages_into_threads(tmp_path):
 
     assert len(threads) == 2
     assert isinstance(threads[0], EmailThread)
+    assert isinstance(threads[0].messages[0], EmailMessage)
     assert threads[0].thread_id == "t1"
     assert threads[0].subject == "Hello"
     assert len(threads[0].messages) == 2
     assert threads[0].messages[0].sender == "alice@example.com"
+    # is_from_self is the only computed field — verify it's set correctly
+    assert threads[0].messages[0].is_from_self is False  # alice is not me
+    assert threads[0].messages[1].is_from_self is True   # me@example.com is me
     assert threads[1].thread_id == "t2"
     assert threads[1].subject == "Question?"
 
 
 def test_fetch_caches_user_email_address(tmp_path):
-    """getProfile is called once even across multiple fetches."""
+    """getProfile is called exactly once even across multiple fetches."""
     adapter = _make_adapter(tmp_path)
     fake_creds = MagicMock(valid=True)
 
@@ -149,3 +151,26 @@ def test_fetch_caches_user_email_address(tmp_path):
         adapter.fetch_recent_threads(query="in:inbox", max_threads=10)
 
     assert adapter._cached_user_email == "me@example.com"
+    # Behavioral check: getProfile().execute() called exactly once across 2 fetches
+    assert fake_service.users().getProfile().execute.call_count == 1
+
+
+def test_fetch_caches_empty_string_when_profile_missing_email(tmp_path):
+    """If getProfile response lacks emailAddress, cache the empty-string sentinel
+    so subsequent fetches don't loop back into getProfile every call."""
+    adapter = _make_adapter(tmp_path)
+    fake_creds = MagicMock(valid=True)
+
+    fake_service = MagicMock()
+    fake_service.users().threads().list.return_value.execute.return_value = {}
+    # Unexpected response shape — no emailAddress key
+    fake_service.users().getProfile.return_value.execute.return_value = {}
+
+    with patch.object(adapter, "_ensure_credentials", return_value=fake_creds), \
+         patch("jkw_obs_mcp.adapter.gmail.build", return_value=fake_service):
+        adapter.fetch_recent_threads(query="in:inbox", max_threads=10)
+        adapter.fetch_recent_threads(query="in:inbox", max_threads=10)
+
+    # Sentinel value, not None — prevents the "is None → re-fetch" loop
+    assert adapter._cached_user_email == ""
+    assert fake_service.users().getProfile().execute.call_count == 1
