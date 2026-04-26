@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any  # noqa: F401 — used by GmailAdapter methods added in Task 3
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -54,10 +55,31 @@ class GmailAdapter:
             return None
 
     def _save_credentials(self, creds: Credentials) -> None:
-        """Persist credentials.to_json() with mode 600."""
+        """Persist credentials.to_json() with mode 600.
+
+        Writes to a tempfile in the same directory, chmods to 600 before any
+        bytes are written, then atomically replaces the target. This avoids a
+        TOCTOU window where the token file would briefly sit at the umask
+        default (typically 644) and expose the long-lived refresh token to
+        other local processes.
+        """
         self.token_path.parent.mkdir(parents=True, exist_ok=True)
-        self.token_path.write_text(creds.to_json())
-        os.chmod(self.token_path, 0o600)
+        # delete=False so we can atomically rename it; cleanup on failure below.
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".token-", suffix=".tmp", dir=self.token_path.parent
+        )
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(creds.to_json())
+            os.replace(tmp_path, self.token_path)
+        except Exception:
+            # Best-effort cleanup; let the original exception propagate.
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
+            raise
 
     def _ensure_credentials(self) -> Credentials | None:
         """Return valid Credentials or None.
