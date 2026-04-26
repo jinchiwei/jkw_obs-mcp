@@ -229,6 +229,13 @@ def main() -> None:
             f"config not found at {cfg_path}. Run install.sh to bootstrap."
         )
 
+    # Load secrets from ~/.config/jkw-obs-mcp/.env (autofeeder-style: never
+    # touches the user's shell). Existing env vars take precedence.
+    from dotenv import load_dotenv
+    env_path = cfg_path.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+
     cfg = load_config(cfg_path)
 
     # machines.toml ships with the package; locate it relative to this file.
