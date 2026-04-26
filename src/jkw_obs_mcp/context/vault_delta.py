@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-_SKIP_DIRS = frozenset({".obsidian", ".trash", ".git", ".direnv", ".venv", "node_modules"})
+_SKIP_DIRS = frozenset({
+    ".obsidian", ".trash", ".git", ".direnv", ".venv", "node_modules",
+    ".pytest_cache", "__pycache__",
+})
 
 
 @dataclass(frozen=True)

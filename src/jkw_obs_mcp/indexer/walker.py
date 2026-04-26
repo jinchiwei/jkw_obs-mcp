@@ -9,8 +9,13 @@ from pathlib import Path
 
 
 # Top-level dirs that are NEVER scanned. .obsidian holds plugin code/state,
-# .trash is recoverable in the Obsidian UI (not signal), .git is repo metadata.
-_SKIP_DIRS = frozenset({".obsidian", ".trash", ".git", ".direnv", ".venv", "node_modules"})
+# .trash is recoverable in the Obsidian UI (not signal), .git is repo metadata,
+# .pytest_cache and __pycache__ are tooling artifacts that can leak into a
+# vault if a tool is run with the vault as its rootdir.
+_SKIP_DIRS = frozenset({
+    ".obsidian", ".trash", ".git", ".direnv", ".venv", "node_modules",
+    ".pytest_cache", "__pycache__",
+})
 
 
 @dataclass(frozen=True)
