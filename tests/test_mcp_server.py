@@ -33,3 +33,38 @@ async def test_dispatch_read_note_returns_file_content(tmp_vault):
     assert len(result) >= 1
     text = result[0].text
     assert "workout log" in text
+
+
+def test_tools_for_adapter_includes_all_three(tmp_vault):
+    adapter = VaultAdapter(vault_root=tmp_vault, machine_id="dreamingmachine")
+
+    tools = tools_for_adapter(adapter)
+    names = {t.name for t in tools}
+
+    assert names == {"read_note", "list_notes", "write_kb_note"}
+
+
+@pytest.mark.asyncio
+async def test_dispatch_list_notes_returns_paths(tmp_vault):
+    adapter = VaultAdapter(vault_root=tmp_vault, machine_id="dreamingmachine")
+
+    result = await dispatch_tool(adapter, "list_notes", {})
+
+    text = result[0].text
+    assert "Admin/Saiyan.md" in text
+
+
+@pytest.mark.asyncio
+async def test_dispatch_write_kb_note_writes_file(tmp_vault):
+    adapter = VaultAdapter(vault_root=tmp_vault, machine_id="dreamingmachine")
+
+    result = await dispatch_tool(
+        adapter,
+        "write_kb_note",
+        {"filename": "test.md", "content": "# Hello\n", "subdir": "ad-hoc"},
+    )
+
+    written_path = tmp_vault / "kb" / "dreamingmachine" / "ad-hoc" / "test.md"
+    assert written_path.read_text() == "# Hello\n"
+    # Tool returns confirmation text
+    assert "test.md" in result[0].text

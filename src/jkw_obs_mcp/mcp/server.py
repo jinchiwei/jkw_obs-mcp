@@ -18,12 +18,8 @@ from jkw_obs_mcp.adapter.vault import VaultAdapter
 
 
 def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
-    """Return the MCP Tool definitions exposed by this server.
-
-    The adapter argument is here for future per-machine tool gating
-    (e.g. only register get_upcoming_events on macOS) — unused in Plan 1.
-    """
-    _ = adapter  # reserved for future use
+    """Return the MCP Tool definitions exposed by this server."""
+    _ = adapter
     return [
         Tool(
             name="read_note",
@@ -40,6 +36,45 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
                 "required": ["path"],
             },
         ),
+        Tool(
+            name="list_notes",
+            description="List all markdown files in the vault, optionally "
+            "scoped to a subdirectory.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "subdir": {
+                        "type": "string",
+                        "description": "Vault-relative subdir to scope the listing",
+                        "default": "",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="write_kb_note",
+            description="Write a markdown note into kb/<this-machine>/<subdir>/. "
+            "Refuses writes outside the machine's kb sandbox.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Filename (e.g. '2026-04-25.md')",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full markdown content",
+                    },
+                    "subdir": {
+                        "type": "string",
+                        "description": "Subdir under kb/<machine>/",
+                        "default": "ad-hoc",
+                    },
+                },
+                "required": ["filename", "content"],
+            },
+        ),
     ]
 
 
@@ -50,6 +85,17 @@ async def dispatch_tool(
     if name == "read_note":
         text = adapter.read_note(arguments["path"])
         return [TextContent(type="text", text=text)]
+    if name == "list_notes":
+        paths = adapter.list_notes(subdir=arguments.get("subdir", ""))
+        text = "\n".join(str(p) for p in paths)
+        return [TextContent(type="text", text=text)]
+    if name == "write_kb_note":
+        written = adapter.write_kb_note(
+            filename=arguments["filename"],
+            content=arguments["content"],
+            subdir=arguments.get("subdir", "ad-hoc"),
+        )
+        return [TextContent(type="text", text=f"wrote {written}")]
     raise ValueError(f"unknown tool: {name}")
 
 
