@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jinchiwei.jkw-obs-mcp.daily-review</string>
+
+    <!-- Run "jkw-obs-mcp-daily-review" at 8am every morning. launchd's catch-up
+         semantics fire it on next wake if the laptop was asleep at 8am. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jinchiwei/miniconda3/envs/deepdream/bin/jkw-obs-mcp-daily-review</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>8</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <!-- Don't kick off a second instance if the previous one is still running -->
+    <key>AbandonProcessGroup</key>
+    <false/>
+
+    <!-- Logs to ~/Library/Logs/jkw-obs-mcp-daily-review.log -->
+    <key>StandardOutPath</key>
+    <string>/Users/jinchiwei/Library/Logs/jkw-obs-mcp-daily-review.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jinchiwei/Library/Logs/jkw-obs-mcp-daily-review.err</string>
+</dict>
+</plist>
