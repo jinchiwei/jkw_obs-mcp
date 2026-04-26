@@ -67,3 +67,26 @@ async def test_dispatch_find_similar_returns_paths(indexed_adapter):
 
     text = result[0].text
     assert "Admin/Saiyan.md" in text
+
+
+@pytest.mark.asyncio
+async def test_dispatch_reindex_runs_indexer(indexed_adapter, tmp_vault):
+    # Add a new note that the existing index doesn't know about.
+    (tmp_vault / "Arcadia").mkdir(exist_ok=True)
+    (tmp_vault / "Arcadia" / "fresh.md").write_text("# fresh\n")
+
+    # Need to attach an Indexer onto the adapter (same pattern as embedder/store).
+    from jkw_obs_mcp.indexer.indexer import Indexer
+    indexed_adapter.indexer = Indexer(
+        vault_root=tmp_vault,
+        store=indexed_adapter.store,
+        embedder=indexed_adapter.embedder,
+    )
+
+    result = await dispatch_tool(
+        indexed_adapter, "reindex", {"scope": "incremental"}
+    )
+
+    text = result[0].text
+    assert "added=1" in text
+    assert "Arcadia/fresh.md" in indexed_adapter.store.all_paths()

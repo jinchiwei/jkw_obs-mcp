@@ -93,6 +93,22 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
                 "required": ["text"],
             },
         ),
+        Tool(
+            name="reindex",
+            description="Re-walk the vault and update the embeddings index. "
+            "Scope: 'incremental' (only changed files, default) or 'full' "
+            "(re-embed everything).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "enum": ["incremental", "full"],
+                        "default": "incremental",
+                    },
+                },
+            },
+        ),
     ]
 
 
@@ -124,6 +140,9 @@ async def dispatch_tool(
         hits = adapter.store.query(query_vec, top_k=arguments.get("top_k", 5))
         lines = [f"- `{h.path}` (distance {h.distance:.4f})" for h in hits]
         return [TextContent(type="text", text="\n".join(lines))]
+    if name == "reindex":
+        stats = adapter.indexer.reindex(scope=arguments.get("scope", "incremental"))
+        return [TextContent(type="text", text=str(stats))]
     raise ValueError(f"unknown tool: {name}")
 
 
@@ -197,6 +216,10 @@ def main() -> None:
     embedder = FastembedEmbedder(model_name=cfg.embeddings.model)
     store = SqliteVecStore(db_path=db_path, dimension=embedder.dimension)
     store.init_schema()
+
+    from jkw_obs_mcp.indexer.indexer import Indexer
+    indexer = Indexer(vault_root=adapter.vault_root, store=store, embedder=embedder)
+    adapter.indexer = indexer
 
     # Attach onto the adapter so dispatch_tool can use them. Adapter doesn't
     # define these as constructor args (kept clean for unit tests of the FS path);
