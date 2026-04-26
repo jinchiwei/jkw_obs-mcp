@@ -176,8 +176,17 @@ git commit -m "feat: add anthropic+pymupdf+jinja2 deps + GenerationConfig schema
 - [ ] **Step 2: Failing test at `tests/test_anthropic_client.py`**
 
 ```python
-"""Tests for the Anthropic client wrapper. Uses a fake client so we don't
-make real API calls during the test suite."""
+"""Tests for the Anthropic client wrapper.
+
+The wrapper supports two backends:
+  - Direct Anthropic API (via ANTHROPIC_API_KEY)
+  - AWS Bedrock — including UCSF Versa via ANTHROPIC_BEDROCK_BASE_URL
+    (autodetected when AWS_ACCESS_KEY_ID is set)
+
+Tests use injected fakes so no real network calls happen.
+"""
+
+from types import SimpleNamespace
 
 import pytest
 
@@ -185,7 +194,8 @@ from jkw_obs_mcp.generation.anthropic_client import AnthropicClient
 
 
 class FakeAnthropic:
-    """Stand-in for anthropic.Anthropic — captures calls and returns canned text."""
+    """Stand-in for anthropic.Anthropic / anthropic.AnthropicBedrock —
+    captures messages.create calls and returns canned text."""
 
     def __init__(self, response_text: str = "stub response") -> None:
         self.response_text = response_text
@@ -194,8 +204,6 @@ class FakeAnthropic:
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
-        # Mimic the real API response shape minimally.
-        from types import SimpleNamespace
         return SimpleNamespace(
             content=[SimpleNamespace(type="text", text=self.response_text)]
         )
@@ -203,7 +211,7 @@ class FakeAnthropic:
 
 def test_complete_passes_prompt_and_model_through():
     fake = FakeAnthropic(response_text="hello back")
-    client = AnthropicClient(api_key="sk-fake", model="claude-opus-4-7", _client=fake)
+    client = AnthropicClient(model="claude-opus-4-7", _client=fake)
 
     out = client.complete(prompt="hello world", system="be terse")
 
@@ -217,22 +225,40 @@ def test_complete_passes_prompt_and_model_through():
 
 def test_complete_uses_default_max_tokens():
     fake = FakeAnthropic()
-    client = AnthropicClient(api_key="sk-fake", model="claude-opus-4-7", _client=fake)
+    client = AnthropicClient(model="claude-opus-4-7", _client=fake)
 
     client.complete(prompt="x", system="y")
 
     assert fake.calls[0]["max_tokens"] >= 1024
 
 
-def test_init_reads_api_key_from_env(monkeypatch):
+def test_autodetect_bedrock_when_aws_key_set(monkeypatch):
+    """If AWS_ACCESS_KEY_ID is set, the client should pick Bedrock."""
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIA-fake")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    fake = FakeAnthropic()
+
+    client = AnthropicClient(model="us.anthropic.claude-opus-4-6-v1", _client=fake)
+
+    assert client.backend == "bedrock"
+
+
+def test_autodetect_direct_api_when_only_anthropic_key_set(monkeypatch):
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-from-env")
     fake = FakeAnthropic()
+
     client = AnthropicClient(model="claude-opus-4-7", _client=fake)
-    assert client.api_key == "sk-from-env"
+
+    assert client.backend == "direct"
 
 
-def test_init_raises_on_missing_api_key(monkeypatch):
+def test_raises_on_missing_credentials(monkeypatch):
+    """No env vars at all → clear error."""
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
         AnthropicClient(model="claude-opus-4-7")
 ```
@@ -242,7 +268,16 @@ def test_init_raises_on_missing_api_key(monkeypatch):
 - [ ] **Step 4: Write `src/jkw_obs_mcp/generation/anthropic_client.py`**
 
 ```python
-"""Thin wrapper around the Anthropic Python SDK for server-side completions."""
+"""Thin wrapper around the Anthropic Python SDK.
+
+Supports two backends, autodetected from environment:
+  - Bedrock (AnthropicBedrock) — when AWS_ACCESS_KEY_ID is set.
+    Honors ANTHROPIC_BEDROCK_BASE_URL for custom endpoints (e.g. UCSF Versa
+    at https://unified-api.ucsf.edu/general/awsai/).
+  - Direct API (anthropic.Anthropic) — when ANTHROPIC_API_KEY is set.
+
+If both are set, Bedrock wins (matches autofeeder's convention).
+"""
 
 from __future__ import annotations
 
@@ -255,30 +290,66 @@ import anthropic
 _DEFAULT_MAX_TOKENS = 4096
 
 
+def _build_default_client() -> tuple[Any, str]:
+    """Construct the underlying SDK client based on env vars.
+
+    Returns (client, backend_tag). backend_tag is "bedrock" or "direct".
+    Raises RuntimeError if neither set of credentials is available.
+    """
+    aws_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+    if aws_key:
+        from anthropic import AnthropicBedrock
+
+        kwargs: dict[str, Any] = {
+            "aws_access_key": aws_key,
+            "aws_secret_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+            "aws_region": (
+                os.environ.get("AWS_REGION")
+                or os.environ.get("AWS_DEFAULT_REGION")
+                or "us-west-2"
+            ),
+        }
+        base_url = os.environ.get("ANTHROPIC_BEDROCK_BASE_URL")
+        if base_url:
+            kwargs["base_url"] = base_url
+        session_token = os.environ.get("AWS_SESSION_TOKEN")
+        if session_token:
+            kwargs["aws_session_token"] = session_token
+        return AnthropicBedrock(**kwargs), "bedrock"
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise RuntimeError(
+            "No Anthropic credentials found. Set either:\n"
+            "  - ANTHROPIC_API_KEY (direct API), or\n"
+            "  - AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY (Bedrock)\n"
+            "    with optional ANTHROPIC_BEDROCK_BASE_URL for UCSF Versa."
+        )
+    return anthropic.Anthropic(api_key=api_key), "direct"
+
+
 class AnthropicClient:
-    """Synchronous wrapper. Single entry point: complete(prompt, system)."""
+    """Synchronous wrapper. Single entry point: complete(prompt, system).
+
+    The underlying SDK client is auto-built from env vars unless _client
+    is injected (used by tests).
+    """
 
     def __init__(
         self,
         *,
         model: str,
-        api_key: str | None = None,
         _client: Any = None,
     ) -> None:
-        if api_key is None:
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set. Export it in the shell that "
-                "launches jkw-obs-mcp, e.g. via .env loaded by your shell."
-            )
-        self.api_key = api_key
         self.model = model
-        # Allow tests to inject a fake. In production, build the real client.
         if _client is not None:
             self.client = _client
+            # Tag explicitly when env says Bedrock; default to "direct" otherwise.
+            self.backend = (
+                "bedrock" if os.environ.get("AWS_ACCESS_KEY_ID") else "direct"
+            )
         else:
-            self.client = anthropic.Anthropic(api_key=api_key)
+            self.client, self.backend = _build_default_client()
 
     def complete(
         self,
@@ -287,14 +358,17 @@ class AnthropicClient:
         system: str = "",
         max_tokens: int = _DEFAULT_MAX_TOKENS,
     ) -> str:
-        """Run a single user-message completion. Returns the assistant text."""
+        """Run a single user-message completion. Returns the assistant text.
+
+        Both anthropic.Anthropic and AnthropicBedrock expose the same
+        messages.create() signature, so one call site works for both.
+        """
         resp = self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
-        # Concatenate all text blocks (usually 1).
         return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
 ```
 
@@ -1209,13 +1283,22 @@ git commit -m "feat: compile_raw MCP tool + main() wires PaperCompiler + ClipCom
 
 This task is non-TDD — exercises real Claude API calls against a real PDF.
 
-**Prerequisite**: `ANTHROPIC_API_KEY` must be set in the shell that launches Claude Code (so the MCP server inherits it). Check: `echo $ANTHROPIC_API_KEY` in a fresh terminal. If empty, add to `~/.zshrc`:
+**Prerequisite (one of two auth paths):**
+
+**Option A — Direct Anthropic API**: set `ANTHROPIC_API_KEY` in your shell. Cost: ~$0.01-0.05 per paper compiled with Opus, less with Sonnet/Haiku. Bills against your Anthropic account.
+
+**Option B — UCSF Versa via Bedrock** (matches autofeeder's setup): set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, and `ANTHROPIC_BEDROCK_BASE_URL=https://unified-api.ucsf.edu/general/awsai/`. Run `aws sso login --profile cdx-mlops` first to refresh creds. In `config.toml`, set `[generation].model` to a Bedrock model id like `us.anthropic.claude-opus-4-6-v1`. Cost: free for UCSF research use.
+
+Verify which backend is active:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+source ~/miniconda3/etc/profile.d/conda.sh && conda activate deepdream
+python -c "from jkw_obs_mcp.generation.anthropic_client import AnthropicClient; c = AnthropicClient(model='claude-opus-4-7'); print(c.backend)"
 ```
 
-Then restart Claude Code so the MCP server picks up the env var.
+Should print `bedrock` or `direct`. If it errors with `RuntimeError: No Anthropic credentials found`, neither auth path is configured.
+
+Restart Claude Code so the MCP server inherits whichever env vars you set.
 
 - [ ] **Step 1: Restart Claude Code** to pick up new tools (compile_raw) + the env var.
 
