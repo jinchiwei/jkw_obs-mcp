@@ -41,6 +41,28 @@ class VaultAdapter:
             if p.is_file()
         )
 
+    def write_kb_note(self, filename: str, content: str, subdir: str = "ad-hoc") -> Path:
+        """Write a note into <vault_root>/kb/<machine_id>/<subdir>/<filename>.
+
+        Rejects path traversal and writes outside kb/<machine_id>/.
+        Returns the absolute path written.
+        """
+        # Resolve subdir relative to kb_root, refusing escape.
+        target_dir = self._resolve_safe(subdir, allowed_root=self.kb_root)
+        # Resolve filename relative to target_dir, refusing escape.
+        target = self._resolve_safe(filename, allowed_root=target_dir)
+        # Ensure final path is still under kb_root (defense in depth).
+        try:
+            target.relative_to(self.kb_root)
+        except ValueError:
+            raise SandboxViolationError(
+                attempted_path=str(target), allowed_root=str(self.kb_root)
+            ) from None
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return target
+
     def _resolve_safe(self, rel_path: str, *, allowed_root: Path) -> Path:
         """Resolve rel_path against allowed_root, refusing path traversal."""
         candidate = (allowed_root / rel_path).resolve()
