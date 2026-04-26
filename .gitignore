@@ -24,3 +24,14 @@ data/
 .idea/
 .vscode/
 *.swp
+
+# Secrets — never commit. Real credentials live at
+# ~/.config/jkw-obs-mcp/.env (loaded via python-dotenv at MCP startup).
+# These patterns are defense-in-depth in case anything env-shaped lands
+# in the repo by accident.
+.env
+.env.*
+!.env.example
+*.pem
+secrets/
+credentials/
