@@ -27,6 +27,12 @@ dev = [
 mac = [
     "pyobjc-framework-EventKit>=12.0",
 ]
+gmail = [
+    "google-api-python-client>=2.100",
+    "google-auth-oauthlib>=1.2",
+    "google-auth>=2.30",
+    "html2text>=2024.2.26",
+]
 
 [project.scripts]
 jkw-obs-mcp = "jkw_obs_mcp.mcp.server:main"
