@@ -109,6 +109,21 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="compile_raw",
+            description="Compile raw/<type>/ files into kb/<machine>/<type>/ via "
+            "server-side Claude prompts. Scope: 'all' (every type) or one of "
+            "'papers', 'clips'.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "type": "string",
+                        "default": "all",
+                    },
+                },
+            },
+        ),
     ]
 
 
@@ -143,6 +158,31 @@ async def dispatch_tool(
     if name == "reindex":
         stats = adapter.indexer.reindex(scope=arguments.get("scope", "incremental"))
         return [TextContent(type="text", text=str(stats))]
+    if name == "compile_raw":
+        from jkw_obs_mcp.compilers.base import CompileState, compile_all
+        scope = arguments.get("scope", "all")
+        state_path = adapter.compile_state_path
+        state = CompileState.load(state_path)
+        compilers = adapter.compilers
+        if scope != "all":
+            if scope not in compilers:
+                raise ValueError(
+                    f"unknown compile scope {scope!r}; "
+                    f"available: {sorted(compilers)} or 'all'"
+                )
+            compilers = {scope: compilers[scope]}
+
+        lines: list[str] = []
+        for _key, compiler in compilers.items():
+            stats = compile_all(
+                compiler=compiler,
+                vault_root=adapter.vault_root,
+                machine_id=adapter.machine_id,
+                state=state,
+                state_path=state_path,
+            )
+            lines.append(str(stats))
+        return [TextContent(type="text", text="\n".join(lines))]
     raise ValueError(f"unknown tool: {name}")
 
 
@@ -226,6 +266,20 @@ def main() -> None:
     # we set them here as plain instance attributes.
     adapter.embedder = embedder
     adapter.store = store
+
+    # Wire the raw → compile → kb pipeline. Compilers run server-side Claude
+    # prompts via the AnthropicClient; compile-state.json (sha256 dedup) lives
+    # alongside embeddings.db under data/.
+    from jkw_obs_mcp.compilers.clips import ClipCompiler
+    from jkw_obs_mcp.compilers.papers import PaperCompiler
+    from jkw_obs_mcp.generation.anthropic_client import AnthropicClient
+
+    anthropic_client = AnthropicClient(model=cfg.generation.model)
+    adapter.compilers = {
+        "papers": PaperCompiler(client=anthropic_client),
+        "clips": ClipCompiler(client=anthropic_client),
+    }
+    adapter.compile_state_path = db_path.parent / "compile-state.json"
 
     server = build_server(adapter)
 
