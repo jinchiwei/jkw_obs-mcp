@@ -63,10 +63,14 @@ class GmailAdapter:
         """Return valid Credentials or None.
 
         Resolution order:
-          1. Load cached token. If valid, return.
-          2. If expired but has refresh_token, refresh and return.
+          1. Load cached token. If expired but has refresh_token, refresh and return.
+          2. If still valid (not expired, token present), return as-is.
           3. If interactive allowed and client_secret present, run OAuth flow.
           4. Otherwise return None (caller treats as 'no Gmail access today').
+
+        Note: in real google-auth Credentials, `valid` is `not expired and token`,
+        so steps 1 and 2 are mutually exclusive. Order matters only because tests
+        use MagicMock where `valid` and `expired` can be set independently.
         """
         creds = self._load_credentials()
 
