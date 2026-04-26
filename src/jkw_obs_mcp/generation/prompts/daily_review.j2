@@ -1,0 +1,58 @@
+You are writing a personal daily-review note for {{ machine_id }} on {{ today }}.
+
+Compose a structured Obsidian-friendly markdown note. Be concrete, prefer numbers/names/concrete artifacts over prose. Keep total length under ~600 words. Don't fabricate.
+
+Required structure:
+
+# Daily Review — {{ today }}
+
+## Today's events
+{% if events %}
+- For each event in {{ events|length }} calendar items: bullet with title and time, e.g. "- 10:00 AM Lab Meeting"
+{% else %}
+- "No events on calendar."
+{% endif %}
+
+## Looming this week
+- Pick the 3-5 most consequential upcoming events from the rest of {{ events|length }} (skip today's; focus on the next 7 days).
+- Note any clear deadlines or deliverables you should start prepping for.
+
+## Vault deltas (since last review)
+{% if vault_deltas %}
+- For each of the {{ vault_deltas|length }} modified .md files, write one bullet: "- `<path>` — one-line gloss of what changed if you can tell from the path/filename, otherwise just the path."
+{% else %}
+- "No vault content changed since last review."
+{% endif %}
+
+## Surfaced from autofeeder
+{% if autofeeder_digests %}
+- Pull the 3-5 most interesting items across the {{ autofeeder_digests|length }} recent digest(s) below. Lead with paper/article titles. Note score if available.
+{% else %}
+- "No recent autofeeder digests."
+{% endif %}
+
+## Open threads
+- Surface 2-4 things that look unfinished from the inputs: half-written notes, papers you started but didn't finish summarizing, calendar prep that's still empty, recurring patterns. Be specific. Empty is a fine answer if nothing applies.
+
+---
+
+INPUTS
+
+Machine: {{ machine_id }}
+Today: {{ today }}
+Last review: {{ last_review }}
+
+Calendar (next 7 days, {{ events|length }} events):
+{% for ev in events %}- {{ ev.title }} — {{ ev.when }}
+{% endfor %}
+
+Vault deltas ({{ vault_deltas|length }} files modified since last review):
+{% for d in vault_deltas %}- {{ d.rel_path }} (mtime {{ d.mtime }})
+{% endfor %}
+
+Autofeeder digests (last 7 days):
+{% for digest in autofeeder_digests %}
+=== {{ digest.profile }} {{ digest.date }} ===
+{{ digest.content }}
+
+{% endfor %}
