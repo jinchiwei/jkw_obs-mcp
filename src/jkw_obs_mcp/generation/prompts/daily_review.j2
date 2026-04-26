@@ -17,12 +17,14 @@ Required structure:
 - Pick the 3-5 most consequential upcoming events from the rest of {{ events|length }} (skip today's; focus on the next 7 days).
 - Note any clear deadlines or deliverables you should start prepping for.
 
-## Mission Log status
-{% if mission_log %}
-- Read the Mission Log (full contents in INPUTS below). Surface the 5-7 most pressing items: in-progress work, blocked items, near-term deadlines, anything marked priority. Cite items by name, not paraphrase. Lead with action verbs.
-- Cross-reference with calendar: which Mission Log items map to this week's events?
+## Open tasks (the Mission Log)
+{% if open_tasks %}
+- Read the open tasks listing (full contents in INPUTS below). Surface the 5-7 most pressing.
+- File-to-life mapping (stable categories): `Tasks/Arcadia.md` = research/work/study. `Tasks/Ephesus.md` = personal/interpersonal. `Tasks/Inbox.md` = miscellaneous catch-all. `Tasks/臥龍.md` = self-improvement.
+- Priority emojis (Tasks plugin): 🔺 highest, ⏫ high, 🔼 medium, 🔽 low, ⏬ lowest. Items with 📅 due dates this week beat un-dated items. Cite tasks by name, not paraphrase.
+- Cross-reference with calendar: which open tasks map to this week's events?
 {% else %}
-- "Mission Log not found at Tasks/Mission Log.md."
+- "No open tasks found under Tasks/."
 {% endif %}
 
 ## Vault deltas (since last review)
@@ -54,11 +56,11 @@ Calendar (next 7 days, {{ events|length }} events):
 {% for ev in events %}- {{ ev.title }} — {{ ev.when }}
 {% endfor %}
 
-Mission Log (Tasks/Mission Log.md):
-{% if mission_log %}
-{{ mission_log }}
+Open tasks (extracted from Tasks/*.md, grouped by file):
+{% if open_tasks %}
+{{ open_tasks }}
 {% else %}
-(no Mission Log file at Tasks/Mission Log.md)
+(no open tasks found under Tasks/)
 {% endif %}
 
 Vault deltas ({{ vault_deltas|length }} files modified since last review):

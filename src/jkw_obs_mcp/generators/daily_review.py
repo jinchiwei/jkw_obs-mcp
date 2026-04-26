@@ -12,7 +12,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from jkw_obs_mcp.adapter.vault import VaultAdapter
 from jkw_obs_mcp.context.autofeeder import load_recent_autofeeder_digests
-from jkw_obs_mcp.context.mission_log import load_mission_log
+from jkw_obs_mcp.context.open_tasks import load_open_tasks
 from jkw_obs_mcp.context.vault_delta import vault_delta_since
 
 
@@ -48,7 +48,7 @@ class DailyReviewGenerator:
         events = self.adapter.calendar.upcoming(days=7) if hasattr(self.adapter, "calendar") else []
         deltas = vault_delta_since(self.adapter.vault_root, since=cutoff)
         digests = load_recent_autofeeder_digests(self.adapter.vault_root, days=7)
-        mission_log = load_mission_log(self.adapter.vault_root)
+        open_tasks = load_open_tasks(self.adapter.vault_root)
 
         # Render prompt
         prompt = self._template.render(
@@ -58,7 +58,7 @@ class DailyReviewGenerator:
             events=events,
             vault_deltas=deltas,
             autofeeder_digests=digests,
-            mission_log=mission_log,
+            open_tasks=open_tasks,
         )
 
         # Call Claude

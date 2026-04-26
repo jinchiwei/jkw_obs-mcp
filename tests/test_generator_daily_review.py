@@ -105,11 +105,11 @@ def test_filename_uses_iso_date_only(adapter_with_state, tmp_vault):
     assert out_path.name == f"{today_iso}.md"
 
 
-def test_mission_log_content_in_prompt_when_present(adapter_with_state, tmp_vault):
-    """Mission Log markdown is fed into the prompt when the file exists."""
+def test_open_tasks_in_prompt_when_present(adapter_with_state, tmp_vault):
+    """Open tasks under Tasks/*.md are fed into the prompt."""
     tasks = tmp_vault / "Tasks"
     tasks.mkdir(parents=True, exist_ok=True)
-    (tasks / "Mission Log.md").write_text("# Mission Log\n\n- [ ] Buy groceries\n- [ ] Submit MCAT")
+    (tasks / "Inbox.md").write_text("- [ ] Buy groceries\n- [ ] Submit MCAT 🔺\n")
 
     client = StubAnthropic()
     gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
@@ -117,14 +117,14 @@ def test_mission_log_content_in_prompt_when_present(adapter_with_state, tmp_vaul
     gen.generate()
 
     assert "Buy groceries" in client.last_prompt
-    assert "Submit MCAT" in client.last_prompt
+    assert "Submit MCAT 🔺" in client.last_prompt
 
 
-def test_mission_log_absent_renders_placeholder(adapter_with_state):
-    """No Mission Log file → prompt has placeholder, no crash."""
+def test_open_tasks_absent_renders_placeholder(adapter_with_state):
+    """No Tasks/ dir → prompt has placeholder, no crash."""
     client = StubAnthropic()
     gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
 
-    gen.generate()  # tmp_vault has no Tasks/Mission Log.md by default
+    gen.generate()  # tmp_vault has no Tasks/ dir by default
 
-    assert "no Mission Log file" in client.last_prompt
+    assert "no open tasks" in client.last_prompt.lower()
