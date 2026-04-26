@@ -124,6 +124,13 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="generate_daily_review",
+            description="Generate today's daily-review note: synthesizes "
+            "calendar (Mac), vault deltas since last review, recent autofeeder "
+            "digests, and ad-hoc kb writes. Writes to kb/<machine>/daily/<date>.md.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
 
@@ -195,6 +202,17 @@ async def dispatch_tool(
             )
             lines.append(str(stats))
         return [TextContent(type="text", text="\n".join(lines))]
+    if name == "generate_daily_review":
+        # Lazy-build the generator on first call (needs Anthropic client).
+        gen = getattr(adapter, "daily_review_generator", None)
+        if gen is None:
+            from jkw_obs_mcp.generation.anthropic_client import AnthropicClient
+            from jkw_obs_mcp.generators.daily_review import DailyReviewGenerator
+            client = AnthropicClient(model=adapter.anthropic_model)
+            gen = DailyReviewGenerator(adapter=adapter, client=client)
+            adapter.daily_review_generator = gen
+        out_path = gen.generate()
+        return [TextContent(type="text", text=f"wrote {out_path}")]
     raise ValueError(f"unknown tool: {name}")
 
 
@@ -293,6 +311,12 @@ def main() -> None:
     adapter.anthropic_model = cfg.generation.model
     adapter.compile_state_path = db_path.parent / "compile-state.json"
     adapter.compilers = None  # lazy: built on first compile_raw dispatch
+
+    # Calendar adapter (icalBuddy on Mac, no-op on Linux).
+    from jkw_obs_mcp.adapter.calendar import CalendarAdapter
+    adapter.calendar = CalendarAdapter()
+    adapter.daily_review_state_path = db_path.parent / "last-daily-review.json"
+    adapter.daily_review_generator = None  # lazy-built on first call
 
     server = build_server(adapter)
 
