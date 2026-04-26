@@ -33,10 +33,7 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Vault-relative path to the .md file",
-                    },
+                    "path": {"type": "string", "description": "Vault-relative path"}
                 },
                 "required": ["path"],
             },
@@ -63,21 +60,37 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": "Filename (e.g. '2026-04-25.md')",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Full markdown content",
-                    },
-                    "subdir": {
-                        "type": "string",
-                        "description": "Subdir under kb/<machine>/",
-                        "default": "ad-hoc",
-                    },
+                    "filename": {"type": "string"},
+                    "content": {"type": "string"},
+                    "subdir": {"type": "string", "default": "ad-hoc"},
                 },
                 "required": ["filename", "content"],
+            },
+        ),
+        Tool(
+            name="search_vault",
+            description="Semantic search over the Obsidian vault. "
+            "Returns the top-K notes most similar to the query, ranked by distance.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "top_k": {"type": "integer", "default": 10},
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="find_similar",
+            description="Find notes semantically similar to the given text. "
+            "Same retrieval as search_vault, but framed for 'notes like this'.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "top_k": {"type": "integer", "default": 5},
+                },
+                "required": ["text"],
             },
         ),
     ]
@@ -101,6 +114,16 @@ async def dispatch_tool(
             subdir=arguments.get("subdir", "ad-hoc"),
         )
         return [TextContent(type="text", text=f"wrote {written}")]
+    if name == "search_vault":
+        query_vec = adapter.embedder.embed_one(arguments["query"])
+        hits = adapter.store.query(query_vec, top_k=arguments.get("top_k", 10))
+        lines = [f"- `{h.path}` (distance {h.distance:.4f})" for h in hits]
+        return [TextContent(type="text", text="\n".join(lines))]
+    if name == "find_similar":
+        query_vec = adapter.embedder.embed_one(arguments["text"])
+        hits = adapter.store.query(query_vec, top_k=arguments.get("top_k", 5))
+        lines = [f"- `{h.path}` (distance {h.distance:.4f})" for h in hits]
+        return [TextContent(type="text", text="\n".join(lines))]
     raise ValueError(f"unknown tool: {name}")
 
 
@@ -159,6 +182,28 @@ def main() -> None:
         )
 
     adapter = VaultAdapter(vault_root=cfg.vault_root, machine_id=cfg.machine_id)
+
+    # Initialize the embeddings backend once at startup. Subsequent reindexes
+    # reuse this Embedder instance.
+    from jkw_obs_mcp.indexer.embedder import FastembedEmbedder
+    from jkw_obs_mcp.indexer.store import SqliteVecStore
+
+    db_path = cfg.embeddings.db_path
+    if not db_path.is_absolute():
+        # Resolve relative to repo root (same convention as machines.toml).
+        db_path = pkg_root / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    embedder = FastembedEmbedder(model_name=cfg.embeddings.model)
+    store = SqliteVecStore(db_path=db_path, dimension=embedder.dimension)
+    store.init_schema()
+
+    # Attach onto the adapter so dispatch_tool can use them. Adapter doesn't
+    # define these as constructor args (kept clean for unit tests of the FS path);
+    # we set them here as plain instance attributes.
+    adapter.embedder = embedder
+    adapter.store = store
+
     server = build_server(adapter)
 
     async def _run() -> None:

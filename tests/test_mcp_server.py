@@ -41,7 +41,7 @@ def test_tools_for_adapter_includes_all_three(tmp_vault):
     tools = tools_for_adapter(adapter)
     names = {t.name for t in tools}
 
-    assert names == {"read_note", "list_notes", "write_kb_note"}
+    assert {"read_note", "list_notes", "write_kb_note"}.issubset(names)
 
 
 @pytest.mark.asyncio
