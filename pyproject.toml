@@ -11,6 +11,8 @@ authors = [{ name = "Jin Wei", email = "mrjinch@gmail.com" }]
 license = { text = "MIT" }
 dependencies = [
     "mcp>=1.0.0",
+    "fastembed>=0.4.0",
+    "sqlite-vec>=0.1.6",
 ]
 
 [project.optional-dependencies]
