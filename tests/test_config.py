@@ -155,3 +155,43 @@ id = "dreamingmachine"
     assert cfg.embeddings.model == "sentence-transformers/all-MiniLM-L6-v2"
     # default db_path is under <repo_root>/data/embeddings.db
     assert str(cfg.embeddings.db_path).endswith("data/embeddings.db")
+
+
+def test_load_config_includes_generation_section(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        """
+[paths]
+vault_root = "/some/vault"
+
+[machine]
+id = "dreamingmachine"
+
+[generation]
+model = "claude-opus-4-7"
+"""
+    )
+
+    cfg = load_config(cfg_file)
+
+    assert cfg.generation.model == "claude-opus-4-7"
+
+
+def test_load_config_uses_generation_defaults_when_section_absent(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        """
+[paths]
+vault_root = "/some/vault"
+
+[machine]
+id = "dreamingmachine"
+"""
+    )
+
+    cfg = load_config(cfg_file)
+
+    # Default model is current production-ready Claude
+    assert cfg.generation.model == "claude-opus-4-7"
+    # daily_review_enabled stays at the existing default
+    assert cfg.generation.daily_review_enabled is False

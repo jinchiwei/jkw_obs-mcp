@@ -21,13 +21,23 @@ class EmbeddingsConfig:
 
 
 @dataclass(frozen=True)
+class GenerationConfig:
+    """Server-side LLM generation settings."""
+
+    model: str = "claude-opus-4-7"
+    daily_review_enabled: bool = False
+
+
+@dataclass(frozen=True)
 class Config:
     """Per-machine configuration loaded from config.toml."""
 
     vault_root: Path
     machine_id: str
-    daily_review_enabled: bool = False
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
     embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
+    # KEPT for backward compat with existing callers — points to generation.daily_review_enabled
+    daily_review_enabled: bool = False
 
 
 def load_config(path: Path) -> Config:
@@ -37,7 +47,7 @@ def load_config(path: Path) -> Config:
 
     paths = data.get("paths", {})
     machine = data.get("machine", {})
-    generation = data.get("generation", {})
+    gen = data.get("generation", {})
     emb = data.get("embeddings", {})
 
     vault_root_str = paths.get("vault_root", "")
@@ -48,6 +58,12 @@ def load_config(path: Path) -> Config:
     machine_id = machine.get("id", "")
     if not machine_id:
         raise ValueError(f"{path}: [machine].id is required")
+
+    # Generation section is optional — defaults from GenerationConfig apply.
+    generation = GenerationConfig(
+        model=gen.get("model", "claude-opus-4-7"),
+        daily_review_enabled=gen.get("daily_review_enabled", False),
+    )
 
     # Embeddings section is optional — defaults from EmbeddingsConfig apply.
     db_path_str = emb.get("db_path", "data/embeddings.db")
@@ -61,8 +77,10 @@ def load_config(path: Path) -> Config:
     return Config(
         vault_root=vault_root,
         machine_id=machine_id,
-        daily_review_enabled=generation.get("daily_review_enabled", False),
+        generation=generation,
         embeddings=embeddings,
+        # Mirror generation.daily_review_enabled at top level for backward compat.
+        daily_review_enabled=generation.daily_review_enabled,
     )
 
 
