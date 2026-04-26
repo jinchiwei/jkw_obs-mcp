@@ -40,20 +40,18 @@ jkw-obs-mcp  # exits cleanly if config + machine_id match; runs stdio server oth
 
 ## Wire into Claude Code
 
-Add to `~/.claude/mcp_servers.json` (or your existing config):
+Use the `claude mcp add` CLI to register the server (Claude Code stores MCP
+config in `~/.claude.json`, not a separate `mcp_servers.json`):
 
-```json
-{
-  "mcpServers": {
-    "jkw-obs": {
-      "command": "/Users/jinchiwei/miniconda3/envs/deepdream/bin/jkw-obs-mcp"
-    }
-  }
-}
+```bash
+claude mcp add --scope user jkw-obs /Users/jinchiwei/miniconda3/envs/deepdream/bin/jkw-obs-mcp
+claude mcp list   # should show "jkw-obs: ✓ Connected"
 ```
 
-Restart Claude Code. The three tools (`read_note`, `list_notes`, `write_kb_note`)
-should appear.
+Restart Claude Code (or just `/mcp` again). The three tools (`read_note`,
+`list_notes`, `write_kb_note`) should appear.
+
+To remove later: `claude mcp remove jkw-obs -s user`.
 
 ## Tools (Plan 1)
 
