@@ -163,7 +163,19 @@ async def dispatch_tool(
         scope = arguments.get("scope", "all")
         state_path = adapter.compile_state_path
         state = CompileState.load(state_path)
-        compilers = adapter.compilers
+        # Lazy-build compilers on first call so users without API credentials
+        # can still use the read/search/write tools.
+        compilers = getattr(adapter, "compilers", None)
+        if compilers is None:
+            from jkw_obs_mcp.compilers.clips import ClipCompiler
+            from jkw_obs_mcp.compilers.papers import PaperCompiler
+            from jkw_obs_mcp.generation.anthropic_client import AnthropicClient
+            client = AnthropicClient(model=adapter.anthropic_model)
+            compilers = {
+                "papers": PaperCompiler(client=client),
+                "clips": ClipCompiler(client=client),
+            }
+            adapter.compilers = compilers
         if scope != "all":
             if scope not in compilers:
                 raise ValueError(
@@ -268,18 +280,12 @@ def main() -> None:
     adapter.store = store
 
     # Wire the raw → compile → kb pipeline. Compilers run server-side Claude
-    # prompts via the AnthropicClient; compile-state.json (sha256 dedup) lives
-    # alongside embeddings.db under data/.
-    from jkw_obs_mcp.compilers.clips import ClipCompiler
-    from jkw_obs_mcp.compilers.papers import PaperCompiler
-    from jkw_obs_mcp.generation.anthropic_client import AnthropicClient
-
-    anthropic_client = AnthropicClient(model=cfg.generation.model)
-    adapter.compilers = {
-        "papers": PaperCompiler(client=anthropic_client),
-        "clips": ClipCompiler(client=anthropic_client),
-    }
+    # prompts via the AnthropicClient. We DEFER building the client to first
+    # compile_raw call so users without API credentials can still use the
+    # read/search/write tools (Plans 1+2 functionality).
+    adapter.anthropic_model = cfg.generation.model
     adapter.compile_state_path = db_path.parent / "compile-state.json"
+    adapter.compilers = None  # lazy: built on first compile_raw dispatch
 
     server = build_server(adapter)
 
