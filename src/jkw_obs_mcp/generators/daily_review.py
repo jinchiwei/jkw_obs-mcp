@@ -12,6 +12,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from jkw_obs_mcp.adapter.vault import VaultAdapter
 from jkw_obs_mcp.context.autofeeder import load_recent_autofeeder_digests
+from jkw_obs_mcp.context.mission_log import load_mission_log
 from jkw_obs_mcp.context.vault_delta import vault_delta_since
 
 
@@ -36,7 +37,10 @@ class DailyReviewGenerator:
         self._template = _env.get_template("daily_review.j2")
 
     def generate(self) -> Path:
-        today = dt.date.today().isoformat()
+        today_dt = dt.date.today()
+        today_iso = today_dt.isoformat()
+        # Pass weekday + ISO date to the prompt so the LLM doesn't guess the day.
+        today_str = today_dt.strftime("%a %Y-%m-%d")
         last_run = self._load_last_run()
         cutoff = last_run or (dt.datetime.now(dt.UTC) - dt.timedelta(hours=24))
 
@@ -44,15 +48,17 @@ class DailyReviewGenerator:
         events = self.adapter.calendar.upcoming(days=7) if hasattr(self.adapter, "calendar") else []
         deltas = vault_delta_since(self.adapter.vault_root, since=cutoff)
         digests = load_recent_autofeeder_digests(self.adapter.vault_root, days=7)
+        mission_log = load_mission_log(self.adapter.vault_root)
 
         # Render prompt
         prompt = self._template.render(
             machine_id=self.adapter.machine_id,
-            today=today,
+            today=today_str,
             last_review=last_run.isoformat() if last_run else "(never)",
             events=events,
             vault_deltas=deltas,
             autofeeder_digests=digests,
+            mission_log=mission_log,
         )
 
         # Call Claude
@@ -63,7 +69,7 @@ class DailyReviewGenerator:
 
         # Write into kb/<machine>/daily/<YYYY-MM-DD>.md
         out_path = self.adapter.write_kb_note(
-            filename=f"{today}.md",
+            filename=f"{today_iso}.md",
             content=markdown,
             subdir="daily",
         )

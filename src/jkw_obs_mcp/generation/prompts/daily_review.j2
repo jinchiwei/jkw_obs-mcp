@@ -17,6 +17,14 @@ Required structure:
 - Pick the 3-5 most consequential upcoming events from the rest of {{ events|length }} (skip today's; focus on the next 7 days).
 - Note any clear deadlines or deliverables you should start prepping for.
 
+## Mission Log status
+{% if mission_log %}
+- Read the Mission Log (full contents in INPUTS below). Surface the 5-7 most pressing items: in-progress work, blocked items, near-term deadlines, anything marked priority. Cite items by name, not paraphrase. Lead with action verbs.
+- Cross-reference with calendar: which Mission Log items map to this week's events?
+{% else %}
+- "Mission Log not found at Tasks/Mission Log.md."
+{% endif %}
+
 ## Vault deltas (since last review)
 {% if vault_deltas %}
 - For each of the {{ vault_deltas|length }} modified .md files, write one bullet: "- `<path>` — one-line gloss of what changed if you can tell from the path/filename, otherwise just the path."
@@ -32,7 +40,7 @@ Required structure:
 {% endif %}
 
 ## Open threads
-- Surface 2-4 things that look unfinished from the inputs: half-written notes, papers you started but didn't finish summarizing, calendar prep that's still empty, recurring patterns. Be specific. Empty is a fine answer if nothing applies.
+- Surface 2-4 things that look unfinished across all inputs (Mission Log, calendar, deltas, autofeeder). Cross-reference: a calendar event prep matched to an autofeeder article, a Mission Log item touching a deltas file, etc. Be specific. Empty is fine if nothing applies.
 
 ---
 
@@ -45,6 +53,13 @@ Last review: {{ last_review }}
 Calendar (next 7 days, {{ events|length }} events):
 {% for ev in events %}- {{ ev.title }} — {{ ev.when }}
 {% endfor %}
+
+Mission Log (Tasks/Mission Log.md):
+{% if mission_log %}
+{{ mission_log }}
+{% else %}
+(no Mission Log file at Tasks/Mission Log.md)
+{% endif %}
 
 Vault deltas ({{ vault_deltas|length }} files modified since last review):
 {% for d in vault_deltas %}- {{ d.rel_path }} (mtime {{ d.mtime }})

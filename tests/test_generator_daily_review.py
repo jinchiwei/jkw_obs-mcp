@@ -80,3 +80,51 @@ def test_second_generate_uses_persisted_timestamp(adapter_with_state):
     # not "(never)"
     assert "Last review:" in second_prompt
     assert "(never)" not in second_prompt
+
+
+def test_today_in_prompt_includes_weekday(adapter_with_state):
+    """The prompt's `today` value includes weekday so the LLM can't guess wrong."""
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+
+    gen.generate()
+
+    today_dt = dt.date.today()
+    expected = today_dt.strftime("%a %Y-%m-%d")
+    assert expected in client.last_prompt
+
+
+def test_filename_uses_iso_date_only(adapter_with_state, tmp_vault):
+    """Output file is `<YYYY-MM-DD>.md`, not `<weekday> <YYYY-MM-DD>.md`."""
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+
+    out_path = gen.generate()
+
+    today_iso = dt.date.today().isoformat()
+    assert out_path.name == f"{today_iso}.md"
+
+
+def test_mission_log_content_in_prompt_when_present(adapter_with_state, tmp_vault):
+    """Mission Log markdown is fed into the prompt when the file exists."""
+    tasks = tmp_vault / "Tasks"
+    tasks.mkdir(parents=True, exist_ok=True)
+    (tasks / "Mission Log.md").write_text("# Mission Log\n\n- [ ] Buy groceries\n- [ ] Submit MCAT")
+
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+
+    gen.generate()
+
+    assert "Buy groceries" in client.last_prompt
+    assert "Submit MCAT" in client.last_prompt
+
+
+def test_mission_log_absent_renders_placeholder(adapter_with_state):
+    """No Mission Log file → prompt has placeholder, no crash."""
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+
+    gen.generate()  # tmp_vault has no Tasks/Mission Log.md by default
+
+    assert "no Mission Log file" in client.last_prompt
