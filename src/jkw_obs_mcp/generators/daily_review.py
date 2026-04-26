@@ -43,7 +43,7 @@ class DailyReviewGenerator:
         # Gather inputs
         events = self.adapter.calendar.upcoming(days=7) if hasattr(self.adapter, "calendar") else []
         deltas = vault_delta_since(self.adapter.vault_root, since=cutoff)
-        digests = load_recent_autofeeder_digests(self.adapter.vault_root, days=2)
+        digests = load_recent_autofeeder_digests(self.adapter.vault_root, days=7)
 
         # Render prompt
         prompt = self._template.render(
