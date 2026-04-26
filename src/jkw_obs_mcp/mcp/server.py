@@ -9,12 +9,17 @@ Two layers:
 
 from __future__ import annotations
 
+import asyncio
+import os
+from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
+from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from jkw_obs_mcp.adapter.vault import VaultAdapter
+from jkw_obs_mcp.config import detect_machine_id, load_config, load_machines
 
 
 def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
@@ -116,3 +121,48 @@ def build_server(adapter: VaultAdapter) -> Server:
         return await dispatch_tool(adapter, name, arguments)
 
     return server
+
+
+def main() -> None:
+    """Entry point for the `jkw-obs-mcp` console script.
+
+    Loads ~/.config/jkw-obs-mcp/config.toml and the bundled machines.toml,
+    builds the VaultAdapter, and serves over stdio.
+    """
+    cfg_path = Path(os.path.expanduser("~/.config/jkw-obs-mcp/config.toml"))
+    if not cfg_path.exists():
+        raise SystemExit(
+            f"config not found at {cfg_path}. Run install.sh to bootstrap."
+        )
+
+    cfg = load_config(cfg_path)
+
+    # machines.toml ships with the package; locate it relative to this file.
+    pkg_root = Path(__file__).resolve().parent.parent.parent.parent
+    machines_path = pkg_root / "machines.toml"
+    if not machines_path.exists():
+        raise SystemExit(f"machines.toml not found at {machines_path}")
+    registry = load_machines(machines_path)
+
+    # Validate config.machine_id against registry + actual hostname (defense in depth).
+    if cfg.machine_id not in registry:
+        raise SystemExit(
+            f"config.machine.id={cfg.machine_id!r} is not in machines.toml. "
+            f"Known: {list(k for k, _ in registry.items())}"
+        )
+
+    detected = detect_machine_id(registry)
+    if detected != cfg.machine_id:
+        raise SystemExit(
+            f"hostname suggests {detected!r} but config says {cfg.machine_id!r}. "
+            f"Edit ~/.config/jkw-obs-mcp/config.toml or update machines.toml."
+        )
+
+    adapter = VaultAdapter(vault_root=cfg.vault_root, machine_id=cfg.machine_id)
+    server = build_server(adapter)
+
+    async def _run() -> None:
+        async with stdio_server() as (read, write):
+            await server.run(read, write, server.create_initialization_options())
+
+    asyncio.run(_run())
