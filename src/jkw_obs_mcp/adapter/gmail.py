@@ -238,12 +238,19 @@ def _extract_message_body(payload: dict) -> str:
 
 
 def _find_part_by_mime(payload: dict, target_mime: str) -> str | None:
-    """Recursively search for a part with `mimeType == target_mime`. Returns decoded body."""
+    """Recursively search for a part with `mimeType == target_mime`.
+
+    Returns the decoded body, or None if no such part is found, the part has
+    no `data` field, decoding fails, or the decoded body is empty. Treating
+    an empty body as 'not found' lets the caller fall through to other
+    mime types (e.g., text/plain present but empty → try text/html).
+    """
     if payload.get("mimeType") == target_mime:
         data = payload.get("body", {}).get("data")
         if data:
             try:
-                return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+                decoded = base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+                return decoded or None
             except Exception:
                 return None
 
