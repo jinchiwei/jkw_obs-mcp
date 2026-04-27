@@ -209,17 +209,47 @@ class GmailAdapter:
 
 
 def _extract_message_body(payload: dict) -> str:
-    """Stub — full implementation lands in Task 4 (body extraction).
+    """Walk MIME parts to find a usable body.
 
-    This intentionally handles only the simple top-level text/plain case.
-    Task 4 replaces this with multipart-aware extraction. Test fixtures in
-    Task 3 only use simple text/plain payloads.
+    Preference order:
+      1. text/plain (top-level or inside multipart)
+      2. text/html (stripped to plain text via html2text)
+      3. ""
     """
-    mime = payload.get("mimeType", "")
-    body_data = payload.get("body", {}).get("data")
-    if mime == "text/plain" and body_data:
+    plain = _find_part_by_mime(payload, "text/plain")
+    if plain is not None:
+        return plain
+
+    html = _find_part_by_mime(payload, "text/html")
+    if html is not None:
         try:
-            return base64.urlsafe_b64decode(body_data).decode("utf-8", errors="replace")
-        except Exception:
-            return ""
+            import html2text
+            h = html2text.HTML2Text()
+            h.ignore_links = False
+            h.ignore_images = True
+            h.body_width = 0  # don't wrap
+            return h.handle(html).strip()
+        except ImportError:
+            # html2text missing — strip tags via a crude regex fallback
+            import re
+            return re.sub(r"<[^>]+>", " ", html).strip()
+
     return ""
+
+
+def _find_part_by_mime(payload: dict, target_mime: str) -> str | None:
+    """Recursively search for a part with `mimeType == target_mime`. Returns decoded body."""
+    if payload.get("mimeType") == target_mime:
+        data = payload.get("body", {}).get("data")
+        if data:
+            try:
+                return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+            except Exception:
+                return None
+
+    for part in payload.get("parts", []):
+        found = _find_part_by_mime(part, target_mime)
+        if found is not None:
+            return found
+
+    return None
