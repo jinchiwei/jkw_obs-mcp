@@ -128,3 +128,73 @@ def test_open_tasks_absent_renders_placeholder(adapter_with_state):
     gen.generate()  # tmp_vault has no Tasks/ dir by default
 
     assert "no open tasks" in client.last_prompt.lower()
+
+
+def test_generate_calls_email_compiler_when_attached(adapter_with_state):
+    """If adapter has email_compiler, generate() calls it before assembling prompt."""
+
+    class StubEmailCompiler:
+        def __init__(self):
+            self.called = False
+
+        def compile(self):
+            self.called = True
+            return None  # No threads → returns None, daily review continues
+
+    stub = StubEmailCompiler()
+    adapter_with_state.email_compiler = stub
+
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+    gen.generate()
+
+    assert stub.called
+
+
+def test_generate_includes_email_summary_in_prompt_when_present(
+    adapter_with_state, tmp_vault
+):
+    """A non-empty email summary file under kb/<machine>/email/ is fed into the prompt."""
+    today = dt.date.today().isoformat()
+    email_dir = tmp_vault / "kb" / "dreamingmachine" / "email"
+    email_dir.mkdir(parents=True)
+    (email_dir / f"{today}.md").write_text(
+        "# Email Pulse\n\n## Waiting on you\n- **Reply to Roberto** about BARDA"
+    )
+
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+    gen.generate()
+
+    assert "Roberto" in client.last_prompt
+    assert "BARDA" in client.last_prompt
+
+
+def test_generate_handles_email_compile_failure_gracefully(adapter_with_state):
+    """EmailCompiler.compile() raising must not break the daily review."""
+
+    class FailingCompiler:
+        def compile(self):
+            raise RuntimeError("simulated network error")
+
+    adapter_with_state.email_compiler = FailingCompiler()
+
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+    out_path = gen.generate()  # MUST NOT raise
+
+    assert out_path.is_file()
+    # Prompt should still render with the no-summary placeholder
+    assert "no recent email summary" in client.last_prompt.lower()
+
+
+def test_generate_works_without_email_compiler_attribute(adapter_with_state):
+    """If adapter never got email_compiler attached, generate() proceeds anyway."""
+    if hasattr(adapter_with_state, "email_compiler"):
+        delattr(adapter_with_state, "email_compiler")
+
+    client = StubAnthropic()
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=client)
+    out_path = gen.generate()  # MUST NOT raise
+
+    assert out_path.is_file()

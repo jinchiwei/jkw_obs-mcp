@@ -12,6 +12,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from jkw_obs_mcp.adapter.vault import VaultAdapter
 from jkw_obs_mcp.context.autofeeder import load_recent_autofeeder_digests
+from jkw_obs_mcp.context.email_summary import load_recent_email_summary
 from jkw_obs_mcp.context.open_tasks import load_open_tasks
 from jkw_obs_mcp.context.vault_delta import vault_delta_since
 
@@ -44,11 +45,24 @@ class DailyReviewGenerator:
         last_run = self._load_last_run()
         cutoff = last_run or (dt.datetime.now(dt.UTC) - dt.timedelta(hours=24))
 
+        # Bundled email compile — graceful degrade on any failure.
+        # Email failure must NEVER block the daily review. The summary file
+        # simply won't exist, and load_recent_email_summary returns None below.
+        compiler = getattr(self.adapter, "email_compiler", None)
+        if compiler is not None:
+            try:
+                compiler.compile()
+            except Exception:
+                pass
+
         # Gather inputs
         events = self.adapter.calendar.upcoming(days=7) if hasattr(self.adapter, "calendar") else []
         deltas = vault_delta_since(self.adapter.vault_root, since=cutoff)
         digests = load_recent_autofeeder_digests(self.adapter.vault_root, days=7)
         open_tasks = load_open_tasks(self.adapter.vault_root)
+        email_summary = load_recent_email_summary(
+            self.adapter.vault_root, machine_id=self.adapter.machine_id
+        )
 
         # Render prompt
         prompt = self._template.render(
@@ -59,6 +73,7 @@ class DailyReviewGenerator:
             vault_deltas=deltas,
             autofeeder_digests=digests,
             open_tasks=open_tasks,
+            email_summary=email_summary,
         )
 
         # Call Claude
