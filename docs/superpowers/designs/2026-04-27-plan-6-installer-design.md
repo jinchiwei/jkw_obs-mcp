@@ -127,8 +127,11 @@ def _run_daily_review() -> int:
 
 **Updated plist** (replaces Plan 4 template):
 - Drop `StartCalendarInterval` (the 8am model)
-- Add `RunAtLoad=true` (fires at user login)
+- Add `StartInterval=300` (fires every 5 min while awake; paused during sleep)
+- Add `RunAtLoad=true` (also fires at session login as a backup)
 - Keep `StandardOutPath` / `StandardErrorPath` for ~/Library/Logs/
+
+**Why `StartInterval=300` over `RunAtLoad` alone:** Jin almost always wakes the laptop from sleep rather than fully shutting down, so `RunAtLoad` (which fires only at session login, NOT on wake-from-sleep) would rarely fire under his usage pattern. `StartInterval=300` means launchd fires the trigger every 5 min while the laptop is awake; on wake-from-sleep, the timer resumes and the next fire happens within 5 min. The boot-trigger script's date check is ~10ms, so the steady-state cost is 12 fires/hour × 10ms = 120ms/hour, which is invisible. After the first fire of the day, every subsequent check is a no-op (date matches). `RunAtLoad=true` is kept as a backup in case the user does a full restart — fires immediately at login regardless of `StartInterval` cadence.
 
 **`pyproject.toml` additions** under `[project.scripts]`:
 ```toml
@@ -144,7 +147,7 @@ jkw-obs-mcp-daily-review = "jkw_obs_mcp.triggers.daily_review_runner:main"
 2. **What's the cluster daily-review trigger?** Plan 7 territory. Options: (a) cron, (b) systemd timer, (c) manual, (d) skip entirely. Likely (d) for now since clusters don't have calendar/email/personal context that makes a daily review valuable.
 3. **Should setup also `pip install -e`?** Currently I have it skip and assume user did it. But the cleaner UX is `jkw-obs-mcp-setup --bootstrap` that does the pip install first. Defer — adds complexity for marginal gain.
 4. **What happens if hostname changes?** (e.g., Jin's laptop hostname rotates between docking states.) `machines.toml` has `hostname_aliases`; setup could append on a mismatch. Defer to actual problem.
-5. **Mac sleep-wake behavior.** `RunAtLoad=true` fires once per session login, not per wake-from-sleep. So if Jin closes the laptop and reopens it next morning, the trigger does NOT fire (same session). Real first-of-day fires happen on actual login (after restart, after explicit logout). Acceptable: Jin opens Claude Code and triggers manually if needed. Worse case: he forgets, no review that day, no harm done. Worth a note in the plan but not blocking.
+5. **Mac sleep-wake behavior.** RESOLVED: switched to `StartInterval=300` (every 5 min while awake) which handles the wake-from-sleep case — Jin's actual usage pattern. `RunAtLoad=true` is also set as a belt-and-suspenders backup for full restarts. Worst case: daily review fires within 5 min of waking the laptop. Steady-state overhead: 120ms/hour, invisible.
 
 ## Success Criteria
 
