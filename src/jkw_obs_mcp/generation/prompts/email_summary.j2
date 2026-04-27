@@ -1,0 +1,72 @@
+You are summarizing the user's recent email activity for their morning daily-review note.
+
+Today: {{ today }}
+Machine: {{ machine_id }}
+
+Compose a structured Obsidian-friendly markdown note. Be concrete, prefer subject lines and sender names over prose. Don't fabricate. If a thread is genuinely low-signal, omit it.
+
+Required structure:
+
+# Email Pulse — {{ today }}
+
+## Waiting on you
+{% if waiting_on_you %}
+- For each of {{ waiting_on_you|length }} threads, write one bullet containing:
+  the subject (bold), the sender's short name, a one-line gist of the latest inbound message, and a concrete one-line "suggested next action."
+- When referencing a thread, include the Gmail permalink: `https://mail.google.com/mail/u/0/#inbox/<thread_id>` (substitute the actual thread_id from INPUTS below).
+{% else %}
+- "Nothing waiting on you right now."
+{% endif %}
+
+## New conversations
+{% if first_touch %}
+- For each of {{ first_touch|length }} new threads, one bullet with the bolded subject, the sender's short name, and a one-line summary of the body.
+{% else %}
+- "No new conversations."
+{% endif %}
+
+## Active threads (FYI)
+{% if recent_activity %}
+- For each of {{ recent_activity|length }} active threads, one short bullet with the bolded subject and a one-line note on the latest activity (who replied last, what changed).
+- Keep this section terse — these are threads you've already engaged with.
+{% else %}
+- "No other active threads."
+{% endif %}
+
+---
+
+INPUTS
+
+{% for thread in waiting_on_you %}
+=== WAITING_ON_YOU thread {{ thread.thread_id }} ===
+Subject: {{ thread.subject }}
+Permalink: https://mail.google.com/mail/u/0/#inbox/{{ thread.thread_id }}
+Messages:
+{% for msg in thread.messages %}
+[{{ msg.date }}] From: {{ msg.sender }}
+{{ msg.body[:1500] }}{% if msg.body|length > 1500 %}... [truncated]{% endif %}
+
+{% endfor %}
+
+{% endfor %}
+
+{% for thread in first_touch %}
+=== FIRST_TOUCH thread {{ thread.thread_id }} ===
+Subject: {{ thread.subject }}
+Permalink: https://mail.google.com/mail/u/0/#inbox/{{ thread.thread_id }}
+{% for msg in thread.messages %}
+[{{ msg.date }}] From: {{ msg.sender }}
+{{ msg.body[:1500] }}{% if msg.body|length > 1500 %}... [truncated]{% endif %}
+
+{% endfor %}
+
+{% endfor %}
+
+{% for thread in recent_activity %}
+=== RECENT_ACTIVITY thread {{ thread.thread_id }} ===
+Subject: {{ thread.subject }}
+Permalink: https://mail.google.com/mail/u/0/#inbox/{{ thread.thread_id }}
+Most recent: [{{ thread.messages[-1].date }}] From: {{ thread.messages[-1].sender }}
+{{ thread.messages[-1].body[:800] }}{% if thread.messages[-1].body|length > 800 %}... [truncated]{% endif %}
+
+{% endfor %}
