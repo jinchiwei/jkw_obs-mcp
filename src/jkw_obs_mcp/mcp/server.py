@@ -131,6 +131,14 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
             "digests, and ad-hoc kb writes. Writes to kb/<machine>/daily/<date>.md.",
             inputSchema={"type": "object", "properties": {}},
         ),
+        Tool(
+            name="compile_email",
+            description="Pull recent Gmail threads (Primary inbox, last 2 days), "
+            "classify by waiting-on-you / new-conversation / active-thread, and write "
+            "a structured summary to kb/<machine>/email/<date>.md. Mac-only; the file "
+            "is excluded from the obsidian-git mirror.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
 
@@ -212,6 +220,33 @@ async def dispatch_tool(
             gen = DailyReviewGenerator(adapter=adapter, client=client)
             adapter.daily_review_generator = gen
         out_path = gen.generate()
+        return [TextContent(type="text", text=f"wrote {out_path}")]
+    if name == "compile_email":
+        # Lazy-build EmailCompiler on first call (needs Gmail OAuth + Anthropic).
+        compiler = getattr(adapter, "email_compiler", None)
+        if compiler is None:
+            from pathlib import Path
+            from jkw_obs_mcp.adapter.gmail import GmailAdapter
+            from jkw_obs_mcp.compilers.email_compiler import EmailCompiler
+            from jkw_obs_mcp.generation.anthropic_client import AnthropicClient
+
+            cfg_dir = Path.home() / ".config" / "jkw-obs-mcp"
+            gmail = GmailAdapter(
+                client_secret_path=cfg_dir / "google-client-secret.json",
+                token_path=cfg_dir / "gmail-token.json",
+            )
+            client = AnthropicClient(model=adapter.anthropic_model)
+            compiler = EmailCompiler(
+                gmail=gmail, client=client, vault_adapter=adapter
+            )
+            adapter.email_compiler = compiler
+
+        out_path = compiler.compile()
+        if out_path is None:
+            return [TextContent(
+                type="text",
+                text="no recent threads matched (empty inbox or no Gmail credentials)",
+            )]
         return [TextContent(type="text", text=f"wrote {out_path}")]
     raise ValueError(f"unknown tool: {name}")
 
@@ -317,6 +352,7 @@ def main() -> None:
     adapter.calendar = CalendarAdapter()
     adapter.daily_review_state_path = db_path.parent / "last-daily-review.json"
     adapter.daily_review_generator = None  # lazy-built on first call
+    adapter.email_compiler = None  # lazy-built on first compile_email dispatch
 
     server = build_server(adapter)
 
