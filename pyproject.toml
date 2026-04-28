@@ -36,6 +36,8 @@ gmail = [
 
 [project.scripts]
 jkw-obs-mcp = "jkw_obs_mcp.mcp.server:main"
+jkw-obs-mcp-setup = "jkw_obs_mcp.installer.cli:main"
+jkw-obs-mcp-daily-review = "jkw_obs_mcp.triggers.daily_review_runner:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/jkw_obs_mcp"]
