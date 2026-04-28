@@ -7,6 +7,9 @@ the install function is a no-op.
 
 from __future__ import annotations
 
+import os
+import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -65,3 +68,71 @@ def render_plist(*, python_path: str | None = None, label: str = LABEL) -> str:
         log_out=str(home / "Library" / "Logs" / f"{label}.log"),
         log_err=str(home / "Library" / "Logs" / f"{label}.err"),
     )
+
+
+def _default_plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+
+
+def install_launchd_agent(*, plist_path: Path | None = None) -> dict[str, object]:
+    """Render the plist, write it to LaunchAgents, and `launchctl bootstrap`.
+
+    Idempotent: bootouts any existing instance first (ignoring failures, since
+    'no such service' is fine on first install).
+
+    No-op on non-Darwin platforms.
+    """
+    if platform.system() != "Darwin":
+        return {"skipped": True, "reason": "non-darwin platform"}
+
+    if plist_path is None:
+        plist_path = _default_plist_path()
+
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_path.write_text(render_plist())
+
+    target = f"gui/{os.getuid()}/{LABEL}"
+    domain = f"gui/{os.getuid()}"
+
+    # Idempotent cleanup of any prior instance. Failures here are expected
+    # on first install (service not registered yet), so we ignore returncode.
+    subprocess.run(
+        ["launchctl", "bootout", target],
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        ["launchctl", "bootstrap", domain, str(plist_path)],
+        capture_output=True,
+        text=True,
+    )
+    return {
+        "skipped": False,
+        "plist_path": str(plist_path),
+        "bootstrap_returncode": result.returncode,
+        "stderr": result.stderr,
+    }
+
+
+def uninstall_launchd_agent(*, plist_path: Path | None = None) -> dict[str, object]:
+    """`launchctl bootout` and remove the plist file. No-op on Linux."""
+    if platform.system() != "Darwin":
+        return {"skipped": True, "reason": "non-darwin platform"}
+
+    if plist_path is None:
+        plist_path = _default_plist_path()
+
+    target = f"gui/{os.getuid()}/{LABEL}"
+    result = subprocess.run(
+        ["launchctl", "bootout", target],
+        capture_output=True,
+        text=True,
+    )
+    if plist_path.is_file():
+        plist_path.unlink()
+    return {
+        "skipped": False,
+        "bootout_returncode": result.returncode,
+        "stderr": result.stderr,
+    }
