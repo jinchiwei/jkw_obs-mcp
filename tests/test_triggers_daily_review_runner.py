@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,8 +43,10 @@ def test_should_run_when_last_run_was_yesterday(tmp_path):
 def test_should_skip_when_last_run_was_today(tmp_path):
     state = tmp_path / "state.json"
     today = dt.date(2026, 4, 27)
-    earlier_today = dt.datetime(2026, 4, 27, 1, 0, 0, tzinfo=dt.UTC)
-    state.write_text(json.dumps({"last_run_at": earlier_today.isoformat()}))
+    # Noon UTC falls within "today" in every timezone within UTC±12, so this
+    # test is timezone-independent.
+    midday_today = dt.datetime(2026, 4, 27, 12, 0, 0, tzinfo=dt.UTC)
+    state.write_text(json.dumps({"last_run_at": midday_today.isoformat()}))
     assert should_run_today(state, today=today) is False
 
 
@@ -52,6 +56,37 @@ def test_should_run_when_last_run_was_far_in_past(tmp_path):
     last_year = dt.datetime(2025, 4, 27, 0, 0, 0, tzinfo=dt.UTC)
     state.write_text(json.dumps({"last_run_at": last_year.isoformat()}))
     assert should_run_today(state, today=today) is True
+
+
+def test_should_run_when_run_crossed_local_midnight_into_next_utc_day(tmp_path):
+    """Regression: a run completed late local-time stores a UTC timestamp whose
+    UTC date is already 'tomorrow'. should_run_today must compare LOCAL dates
+    (not UTC dates) so the next day's local 'today' still triggers a fresh run.
+
+    Concrete scenario: PDT user runs at 22:00 local on 2026-04-27.
+    UTC equivalent: 05:00 on 2026-04-28. State file stores "2026-04-28T05:00:00+00:00".
+    Next morning (2026-04-28 local), should_run_today must return True because
+    in local time the previous run was on 2026-04-27.
+    """
+    monkeypatch_tz = "America/Los_Angeles"
+    saved_tz = os.environ.get("TZ")
+    os.environ["TZ"] = monkeypatch_tz
+    time.tzset()
+    try:
+        state = tmp_path / "state.json"
+        # 05:00 UTC on 2026-04-28 == 22:00 PDT on 2026-04-27 (UTC-7)
+        late_yesterday_local = dt.datetime(2026, 4, 28, 5, 0, 0, tzinfo=dt.UTC)
+        state.write_text(json.dumps({"last_run_at": late_yesterday_local.isoformat()}))
+
+        # Today (local) is 2026-04-28
+        today_local = dt.date(2026, 4, 28)
+        assert should_run_today(state, today=today_local) is True
+    finally:
+        if saved_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = saved_tz
+        time.tzset()
 
 
 # ---- main() with injectable runner ----

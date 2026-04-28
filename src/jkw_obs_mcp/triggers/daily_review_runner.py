@@ -37,9 +37,15 @@ def should_run_today(
     """Return True if a daily review should run now.
 
     True when: state file missing, corrupt, missing the `last_run_at` key,
-    or the persisted last_run_at is on a strictly earlier date than `today`.
-    False only when state file exists, parses cleanly, and last_run_at's
-    date matches today.
+    or the persisted last_run_at falls on a strictly earlier LOCAL date than
+    `today` (also a local date). False only when state file exists, parses
+    cleanly, and last_run_at's local date matches today.
+
+    Timezone handling: state files store UTC timestamps (canonical, DST-safe).
+    Comparison must use local dates because the user's "day" boundary is
+    local midnight, not UTC midnight. Otherwise a run that completes after
+    local midnight UTC (e.g., 22:00 PDT = 05:00 UTC the next day) would skip
+    today's run because its UTC date appears to match today's local date.
     """
     if today is None:
         today = _today()
@@ -53,7 +59,10 @@ def should_run_today(
         if not ts:
             return True
         last_run = dt.datetime.fromisoformat(ts)
-        return last_run.date() < today
+        # Convert UTC tz-aware timestamp to local datetime, then take local date.
+        # astimezone() with no argument converts to system local tz.
+        last_run_local_date = last_run.astimezone().date()
+        return last_run_local_date < today
     except (json.JSONDecodeError, KeyError, ValueError):
         return True
 
