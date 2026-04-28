@@ -152,7 +152,7 @@ id = "dreamingmachine"
     cfg = load_config(cfg_file)
 
     assert cfg.embeddings.backend == "fastembed"
-    assert cfg.embeddings.model == "sentence-transformers/all-MiniLM-L6-v2"
+    assert cfg.embeddings.model == "jinaai/jina-embeddings-v2-base-zh"
     # default db_path is under <repo_root>/data/embeddings.db
     assert str(cfg.embeddings.db_path).endswith("data/embeddings.db")
 

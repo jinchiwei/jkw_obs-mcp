@@ -18,9 +18,14 @@ class Embedder(Protocol):
 
 
 class FastembedEmbedder:
-    """fastembed-backed embedder. ONNX, no torch required."""
+    """fastembed-backed embedder. ONNX, no torch required.
 
-    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
+    Default model: jinaai/jina-embeddings-v2-base-zh — bilingual Chinese+English,
+    768-dim, 8192-token context. Plan-2-current default chosen for jkw-obs-mcp's
+    mixed-language personal kb. Override via constructor for tests / experiments.
+    """
+
+    def __init__(self, model_name: str = "jinaai/jina-embeddings-v2-base-zh") -> None:
         self.model_name = model_name
         self._model = TextEmbedding(model_name=model_name)
         # Probe the dim with a tiny sentence so we don't bake assumptions in.

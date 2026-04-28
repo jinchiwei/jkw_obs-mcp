@@ -13,10 +13,16 @@ from jkw_obs_mcp.errors import UnknownMachineError
 
 @dataclass(frozen=True)
 class EmbeddingsConfig:
-    """Embeddings backend configuration."""
+    """Embeddings backend configuration.
+
+    Default model: jinaai/jina-embeddings-v2-base-zh
+      - 768-dim, ~640MB, 8192-token context, English+Chinese bilingual
+      - Designed for mixed-language personal knowledge bases
+      - In fastembed's catalog (drop-in via TextEmbedding)
+    """
 
     backend: str = "fastembed"
-    model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    model: str = "jinaai/jina-embeddings-v2-base-zh"
     db_path: Path = Path("data/embeddings.db")
 
 
@@ -70,7 +76,7 @@ def load_config(path: Path) -> Config:
     db_path = Path(db_path_str).expanduser()
     embeddings = EmbeddingsConfig(
         backend=emb.get("backend", "fastembed"),
-        model=emb.get("model", "sentence-transformers/all-MiniLM-L6-v2"),
+        model=emb.get("model", "jinaai/jina-embeddings-v2-base-zh"),
         db_path=db_path,
     )
 
