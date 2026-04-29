@@ -19,6 +19,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from jkw_obs_mcp.adapter.vault import VaultAdapter
+from jkw_obs_mcp.brain_sync.sync import ensure_brain_repo_fresh
 from jkw_obs_mcp.config import detect_machine_id, load_config, load_machines
 
 
@@ -193,11 +194,13 @@ async def dispatch_tool(
         )
         return [TextContent(type="text", text=f"wrote {written}")]
     if name == "search_vault":
+        ensure_brain_repo_fresh(adapter.vault_root, max_age_minutes=5)
         query_vec = adapter.embedder.embed_one(arguments["query"])
         hits = adapter.store.query(query_vec, top_k=arguments.get("top_k", 10))
         lines = [f"- `{h.path}` (distance {h.distance:.4f})" for h in hits]
         return [TextContent(type="text", text="\n".join(lines))]
     if name == "find_similar":
+        ensure_brain_repo_fresh(adapter.vault_root, max_age_minutes=5)
         query_vec = adapter.embedder.embed_one(arguments["text"])
         hits = adapter.store.query(query_vec, top_k=arguments.get("top_k", 5))
         lines = [f"- `{h.path}` (distance {h.distance:.4f})" for h in hits]

@@ -109,3 +109,48 @@ async def test_dispatch_offline_returns_pushed_false_status(adapter_with_indexer
     text = result[0].text
     assert "wrote" in text.lower()
     assert "not pushed" in text.lower() or "local only" in text.lower() or "pushed=false" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_search_vault_calls_ensure_brain_repo_fresh(adapter_with_indexer):
+    """search_vault dispatch calls ensure_brain_repo_fresh(max_age_minutes=5)."""
+    fake_embedder = MagicMock()
+    fake_embedder.embed_one.return_value = [0.0] * 768
+    adapter_with_indexer.embedder = fake_embedder
+    fake_store = MagicMock()
+    fake_store.query.return_value = []
+    adapter_with_indexer.store = fake_store
+
+    pull_calls = []
+
+    def fake_pull(vault_root, *, max_age_minutes):
+        pull_calls.append(max_age_minutes)
+
+    with patch("jkw_obs_mcp.mcp.server.ensure_brain_repo_fresh", side_effect=fake_pull):
+        await dispatch_tool(
+            adapter_with_indexer, "search_vault", {"query": "test"}
+        )
+
+    assert pull_calls == [5]
+
+
+@pytest.mark.asyncio
+async def test_find_similar_calls_ensure_brain_repo_fresh(adapter_with_indexer):
+    fake_embedder = MagicMock()
+    fake_embedder.embed_one.return_value = [0.0] * 768
+    adapter_with_indexer.embedder = fake_embedder
+    fake_store = MagicMock()
+    fake_store.query.return_value = []
+    adapter_with_indexer.store = fake_store
+
+    pull_calls = []
+
+    def fake_pull(vault_root, *, max_age_minutes):
+        pull_calls.append(max_age_minutes)
+
+    with patch("jkw_obs_mcp.mcp.server.ensure_brain_repo_fresh", side_effect=fake_pull):
+        await dispatch_tool(
+            adapter_with_indexer, "find_similar", {"text": "test"}
+        )
+
+    assert pull_calls == [5]
