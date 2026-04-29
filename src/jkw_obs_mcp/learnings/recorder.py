@@ -50,7 +50,9 @@ def _render_frontmatter(
 
     Field order is stable: title, date, machine, tags, applies_to.
     Tags and applies_to render as flow-style lists (e.g., `[a, b, c]` or `[]`).
-    Tag values must not contain commas; caller's responsibility.
+    Caller is responsible for sanitizing inputs: tag/applies_to values must
+    not contain commas, and title/date/machine must not contain newlines
+    (would break frontmatter structure). The orchestrator validates these.
     """
     tags_str = ", ".join(tags)
     applies_str = ", ".join(applies_to)
