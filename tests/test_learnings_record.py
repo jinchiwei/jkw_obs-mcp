@@ -19,11 +19,17 @@ def vault(tmp_path):
 
 
 def _patch_io_layer(*, push_succeeds=True):
-    """Standard patch set: subprocess git ops always succeed by default."""
+    """Standard patch set: subprocess git ops always succeed by default.
+
+    Inspects args[3] (git subcommand) directly — substring-matching the joined
+    args breaks because tmp_path contains the test function name, which can
+    contain "push" / "commit" / etc.
+    """
     def fake_run(args, **kwargs):
-        joined = " ".join(args)
+        # args = ["git", "-C", vault_root, <subcmd>, ...]
+        subcmd = args[3] if len(args) > 3 else ""
         class R: returncode = 0; stderr = ""; stdout = ""
-        if "push" in joined and not push_succeeds:
+        if subcmd == "push" and not push_succeeds:
             R.returncode = 1
             R.stderr = "rejected"
         return R()

@@ -1,8 +1,9 @@
 """record_learning core — slug, frontmatter, path, git ops, orchestrator.
 
-This module implements the `record_learning` MCP tool's logic. Pure functions
-at the bottom (slug, frontmatter, path resolution); orchestrator at top
-composing them with subprocess git ops and an injectable indexer for reindex.
+This module implements the `record_learning` MCP tool's logic. Pure helpers
+first (`_slugify`, `_render_frontmatter`, `_resolve_path`), then I/O-touching
+helpers (`_commit_and_push`), then the result type and the `record_learning`
+orchestrator that composes them.
 
 For testability, all I/O-bound helpers (git, indexer) accept injectable args.
 The MCP layer wires real ones in.
