@@ -11,6 +11,7 @@ The MCP layer wires real ones in.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 def _slugify(title: str, max_len: int = 60) -> str:
@@ -65,3 +66,30 @@ def _render_frontmatter(
         f"applies_to: [{applies_str}]\n"
         "---\n"
     )
+
+
+def _resolve_path(
+    *,
+    vault_root: Path,
+    machine_id: str,
+    category: str,
+    date: str,
+    slug: str,
+) -> Path:
+    """Compute the target file path. Append -2, -3 if collision.
+
+    Creates intermediate dirs (kb/<machine>/learnings/<category>/) if missing.
+    """
+    base_dir = vault_root / "kb" / machine_id / "learnings" / category
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    path = base_dir / f"{date}-{slug}.md"
+    if not path.exists():
+        return path
+
+    # Collision: try -2, -3, ...
+    for i in range(2, 100):
+        path = base_dir / f"{date}-{slug}-{i}.md"
+        if not path.exists():
+            return path
+    raise RuntimeError(f"too many collisions for slug {slug!r} on {date}")
