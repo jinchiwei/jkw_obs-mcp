@@ -139,6 +139,38 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
             "is excluded from the obsidian-git mirror.",
             inputSchema={"type": "object", "properties": {}},
         ),
+        Tool(
+            name="record_learning",
+            description="Write a kb learning note (constraints / decisions / postmortems) "
+            "to kb/<machine>/learnings/<category>/<date>-<slug>.md. Pulls brain repo "
+            "first, writes file with auto-generated frontmatter, commits, pushes "
+            "(retry-once-on-conflict), and reindexes. On push failure (offline), the "
+            "file is still written and committed locally — sync delayed. Use for "
+            "Jin-specific or UCSF-specific or project-internal insights that "
+            "Anthropic's training cannot have.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["constraints", "decisions", "postmortems"],
+                    },
+                    "title": {"type": "string", "minLength": 3},
+                    "content": {"type": "string", "minLength": 50},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "default": [],
+                    },
+                    "applies_to": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "default": [],
+                    },
+                },
+                "required": ["category", "title", "content"],
+            },
+        ),
     ]
 
 
@@ -248,6 +280,25 @@ async def dispatch_tool(
                 text="no recent threads matched (empty inbox or no Gmail credentials)",
             )]
         return [TextContent(type="text", text=f"wrote {out_path}")]
+    if name == "record_learning":
+        from jkw_obs_mcp.learnings.recorder import record_learning
+        result = record_learning(
+            category=arguments["category"],
+            title=arguments["title"],
+            content=arguments["content"],
+            tags=arguments.get("tags", []),
+            applies_to=arguments.get("applies_to", []),
+            vault_root=adapter.vault_root,
+            machine_id=adapter.machine_id,
+            indexer=getattr(adapter, "indexer", None),
+        )
+        if result.pushed:
+            text = f"wrote {result.path}"
+        else:
+            text = (
+                f"wrote {result.path} (local only; not pushed: {result.reason})"
+            )
+        return [TextContent(type="text", text=text)]
     raise ValueError(f"unknown tool: {name}")
 
 
