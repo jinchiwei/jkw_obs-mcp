@@ -138,6 +138,63 @@ def test_pull_rebase_failure_returns_false(tmp_path):
     assert "rebase" in reason.lower() or "conflict" in reason.lower()
 
 
+def test_add_failure_returns_false_no_commit_or_push_attempted(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    file_path = vault / "kb" / "dreamingmachine" / "learnings" / "constraints" / "2026-04-28-test.md"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text("# test")
+
+    subcmds = []
+
+    def fake_run(args, **kwargs):
+        subcmd = args[3] if len(args) > 3 else ""
+        subcmds.append(subcmd)
+        if subcmd == "add":
+            class R: returncode = 1; stderr = "not a git repository"; stdout = ""
+            return R()
+        class R: returncode = 0; stderr = ""; stdout = ""
+        return R()
+
+    with patch("jkw_obs_mcp.learnings.recorder.subprocess.run", side_effect=fake_run):
+        pushed, reason = _commit_and_push(
+            vault_root=vault, file_path=file_path, title="test"
+        )
+
+    assert pushed is False
+    assert "add" in reason.lower()
+    assert "commit" not in subcmds
+    assert "push" not in subcmds
+
+
+def test_commit_no_op_surfaces_stdout_when_stderr_empty(tmp_path):
+    """`git commit` writes 'nothing to commit' to stdout, not stderr.
+
+    Regression: empty stderr would yield 'git commit failed: ' with no body.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    file_path = vault / "kb" / "dreamingmachine" / "learnings" / "constraints" / "2026-04-28-test.md"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text("# test")
+
+    def fake_run(args, **kwargs):
+        subcmd = args[3] if len(args) > 3 else ""
+        if subcmd == "commit":
+            class R: returncode = 1; stderr = ""; stdout = "nothing to commit, working tree clean"
+            return R()
+        class R: returncode = 0; stderr = ""; stdout = ""
+        return R()
+
+    with patch("jkw_obs_mcp.learnings.recorder.subprocess.run", side_effect=fake_run):
+        pushed, reason = _commit_and_push(
+            vault_root=vault, file_path=file_path, title="test"
+        )
+
+    assert pushed is False
+    assert "nothing to commit" in reason.lower()
+
+
 def test_commit_failure_returns_false_no_push_attempted(tmp_path):
     vault = tmp_path / "vault"
     vault.mkdir()

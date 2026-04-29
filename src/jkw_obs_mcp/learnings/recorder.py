@@ -113,14 +113,15 @@ def _commit_and_push(
         capture_output=True, text=True,
     )
     if add.returncode != 0:
-        return False, f"git add failed: {add.stderr.strip()}"
+        return False, f"git add failed: {(add.stderr or add.stdout).strip()}"
 
     commit = subprocess.run(
         ["git", "-C", str(vault_root), "commit", "-m", f"kb: {title}"],
         capture_output=True, text=True,
     )
     if commit.returncode != 0:
-        return False, f"git commit failed: {commit.stderr.strip()}"
+        # `git commit` writes "nothing to commit" to stdout, not stderr.
+        return False, f"git commit failed: {(commit.stderr or commit.stdout).strip()}"
 
     push = subprocess.run(
         ["git", "-C", str(vault_root), "push"],
