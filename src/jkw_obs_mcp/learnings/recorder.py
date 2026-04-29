@@ -11,6 +11,7 @@ The MCP layer wires real ones in.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -93,3 +94,53 @@ def _resolve_path(
         if not path.exists():
             return path
     raise RuntimeError(f"too many collisions for slug {slug!r} on {date}")
+
+
+def _commit_and_push(
+    *,
+    vault_root: Path,
+    file_path: Path,
+    title: str,
+) -> tuple[bool, str | None]:
+    """Add → commit → push, retry-once-on-conflict.
+
+    Returns (pushed: bool, reason: str | None). On push failure, the local
+    commit IS still made — caller's responsibility to inform user that
+    cross-machine sync is delayed.
+    """
+    add = subprocess.run(
+        ["git", "-C", str(vault_root), "add", str(file_path)],
+        capture_output=True, text=True,
+    )
+    if add.returncode != 0:
+        return False, f"git add failed: {add.stderr.strip()}"
+
+    commit = subprocess.run(
+        ["git", "-C", str(vault_root), "commit", "-m", f"kb: {title}"],
+        capture_output=True, text=True,
+    )
+    if commit.returncode != 0:
+        return False, f"git commit failed: {commit.stderr.strip()}"
+
+    push = subprocess.run(
+        ["git", "-C", str(vault_root), "push"],
+        capture_output=True, text=True,
+    )
+    if push.returncode == 0:
+        return True, None
+
+    rebase = subprocess.run(
+        ["git", "-C", str(vault_root), "pull", "--rebase"],
+        capture_output=True, text=True,
+    )
+    if rebase.returncode != 0:
+        return False, f"pull --rebase failed: {rebase.stderr.strip()}"
+
+    retry = subprocess.run(
+        ["git", "-C", str(vault_root), "push"],
+        capture_output=True, text=True,
+    )
+    if retry.returncode == 0:
+        return True, None
+
+    return False, f"git push failed after retry: {retry.stderr.strip()}"
