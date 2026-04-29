@@ -10,9 +10,15 @@ The MCP layer wires real ones in.
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 import subprocess
+import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from jkw_obs_mcp.brain_sync.sync import ensure_brain_repo_fresh
 
 
 def _slugify(title: str, max_len: int = 60) -> str:
@@ -145,3 +151,86 @@ def _commit_and_push(
         return True, None
 
     return False, f"git push failed after retry: {retry.stderr.strip()}"
+
+
+@dataclass(frozen=True)
+class LearningResult:
+    """Status returned from record_learning."""
+
+    written: bool
+    path: Path
+    pushed: bool
+    reason: str | None = None
+
+
+_VALID_CATEGORIES = {"constraints", "decisions", "postmortems"}
+
+
+def record_learning(
+    *,
+    category: str,
+    title: str,
+    content: str,
+    tags: list[str],
+    applies_to: list[str],
+    vault_root: Path,
+    machine_id: str,
+    indexer: Any | None = None,
+) -> LearningResult:
+    """Write a learning note + commit + push + reindex.
+
+    Path: kb/<machine_id>/learnings/<category>/<YYYY-MM-DD>-<slug>.md
+    Frontmatter: title, date, machine, tags, applies_to (auto-generated).
+    Reindex via injected `indexer` (call indexer.reindex(scope='incremental')).
+
+    Returns LearningResult. pushed=False does NOT mean failure — the file is
+    still written locally and the local commit was made; obsidian-git plugin
+    or a manual `git push` will propagate later.
+    """
+    if category not in _VALID_CATEGORIES:
+        raise ValueError(
+            f"invalid category {category!r}; must be one of {sorted(_VALID_CATEGORIES)}"
+        )
+    if len(title) < 3:
+        raise ValueError(f"title too short: {title!r}")
+    if "\n" in title:
+        raise ValueError("title must not contain newlines (would break frontmatter)")
+    if len(content) < 50:
+        raise ValueError("content must be at least 50 characters")
+
+    slug = _slugify(title)
+    if not slug:
+        raise ValueError(f"title produces empty slug after normalization: {title!r}")
+
+    today = dt.date.today().isoformat()
+
+    ensure_brain_repo_fresh(vault_root, max_age_minutes=0)
+
+    path = _resolve_path(
+        vault_root=vault_root,
+        machine_id=machine_id,
+        category=category,
+        date=today,
+        slug=slug,
+    )
+
+    frontmatter = _render_frontmatter(
+        title=title,
+        date=today,
+        machine=machine_id,
+        tags=tags,
+        applies_to=applies_to,
+    )
+    path.write_text(frontmatter + "\n" + content + ("\n" if not content.endswith("\n") else ""))
+
+    pushed, reason = _commit_and_push(
+        vault_root=vault_root, file_path=path, title=title
+    )
+
+    if indexer is not None:
+        try:
+            indexer.reindex(scope="incremental")
+        except Exception as exc:
+            print(f"reindex failed (non-fatal): {exc}", file=sys.stderr)
+
+    return LearningResult(written=True, path=path, pushed=pushed, reason=reason)
