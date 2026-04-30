@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import platform
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +25,14 @@ from jkw_obs_mcp.config import detect_machine_id, load_config, load_machines
 
 
 def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
-    """Return the MCP Tool definitions exposed by this server."""
+    """Return the MCP Tool definitions exposed by this server.
+
+    On Darwin, returns all 10 tools. On Linux (and other non-Darwin platforms),
+    excludes compile_raw, compile_email, and generate_daily_review — these need
+    Mac-specific or Mac-only dependencies (Versa, Gmail OAuth, EventKit).
+    """
     _ = adapter
-    return [
+    all_tools = [
         Tool(
             name="read_note",
             description="Read a markdown note from the Obsidian vault. "
@@ -173,6 +179,10 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
             },
         ),
     ]
+    if platform.system() == "Darwin":
+        return all_tools
+    mac_only = {"compile_raw", "compile_email", "generate_daily_review"}
+    return [t for t in all_tools if t.name not in mac_only]
 
 
 async def dispatch_tool(
