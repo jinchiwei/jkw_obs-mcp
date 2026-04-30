@@ -153,3 +153,121 @@ def test_clone_failure_returns_error(tmp_path):
     assert "permission" in result["error"].lower() or "clone" in result["error"].lower()
     # config.toml NOT written when clone failed (the brain repo isn't there)
     assert not config.exists()
+
+
+def test_sparse_paths_uses_no_checkout_clone_and_sparse_init(tmp_path):
+    """When sparse_paths is provided, clone uses --no-checkout then sparse-checkout."""
+    target = tmp_path / "arcadia" / "jkw_obs-brain"
+    config = tmp_path / "config.toml"
+    runs = []
+
+    def fake_run(args, **kwargs):
+        runs.append(args)
+        class R: returncode = 0; stderr = ""; stdout = ""
+        return R()
+
+    with patch("jkw_obs_mcp.installer.bootstrap_brain_repo.subprocess.run",
+               side_effect=fake_run):
+        result = bootstrap_brain_repo(
+            brain_repo_url="git@github.com:jinchiwei/jkw_obs-brain.git",
+            target_dir=target,
+            machine_id="cdx",
+            config_path=config,
+            sparse_paths=["kb/*/learnings/", "Arcadia/CurieDx/"],
+        )
+
+    cmds = [" ".join(args) for args in runs]
+    clone_cmd = next(c for c in cmds if "clone" in c)
+    assert "--no-checkout" in clone_cmd
+    init_cmd = next(c for c in cmds if "sparse-checkout" in c and "init" in c)
+    assert "--no-cone" in init_cmd
+    set_args = next(args for args in runs if "sparse-checkout" in args and "set" in args)
+    assert "kb/*/learnings/" in set_args
+    assert "Arcadia/CurieDx/" in set_args
+    assert any("checkout" in c and "sparse-checkout" not in c for c in cmds)
+
+    assert result["cloned"] is True
+    assert result["error"] is None
+    assert config.is_file()
+    assert result["config_written"] is True
+
+
+def test_sparse_paths_empty_list_uses_full_clone(tmp_path):
+    """sparse_paths=[] is treated the same as None — full clone, no sparse init."""
+    target = tmp_path / "arcadia" / "jkw_obs-brain"
+    config = tmp_path / "config.toml"
+    runs = []
+
+    def fake_run(args, **kwargs):
+        runs.append(args)
+        class R: returncode = 0; stderr = ""; stdout = ""
+        return R()
+
+    with patch("jkw_obs_mcp.installer.bootstrap_brain_repo.subprocess.run",
+               side_effect=fake_run):
+        bootstrap_brain_repo(
+            brain_repo_url="git@github.com:jinchiwei/jkw_obs-brain.git",
+            target_dir=target,
+            machine_id="cdx",
+            config_path=config,
+            sparse_paths=[],
+        )
+
+    cmds = [" ".join(args) for args in runs]
+    clone_cmd = next(c for c in cmds if "clone" in c)
+    assert "--no-checkout" not in clone_cmd
+    assert not any("sparse-checkout" in c for c in cmds)
+
+
+def test_sparse_paths_default_none_preserves_existing_full_clone_behavior(tmp_path):
+    """When sparse_paths kwarg is omitted (default None), existing behavior holds."""
+    target = tmp_path / "arcadia" / "jkw_obs-brain"
+    config = tmp_path / "config.toml"
+    runs = []
+
+    def fake_run(args, **kwargs):
+        runs.append(args)
+        class R: returncode = 0; stderr = ""; stdout = ""
+        return R()
+
+    with patch("jkw_obs_mcp.installer.bootstrap_brain_repo.subprocess.run",
+               side_effect=fake_run):
+        bootstrap_brain_repo(
+            brain_repo_url="git@github.com:jinchiwei/jkw_obs-brain.git",
+            target_dir=target,
+            machine_id="dreamingmachine",
+            config_path=config,
+        )
+
+    cmds = [" ".join(args) for args in runs]
+    clone_cmd = next(c for c in cmds if "clone" in c)
+    assert "--no-checkout" not in clone_cmd
+    assert not any("sparse-checkout" in c for c in cmds)
+
+
+def test_sparse_paths_clone_failure_returns_error_no_config_written(tmp_path):
+    """If `git clone --no-checkout` fails, return error and don't write config."""
+    target = tmp_path / "arcadia" / "jkw_obs-brain"
+    config = tmp_path / "config.toml"
+
+    def fake_run(args, **kwargs):
+        class R:
+            returncode = 1 if "clone" in args else 0
+            stderr = "permission denied" if "clone" in args else ""
+            stdout = ""
+        return R()
+
+    with patch("jkw_obs_mcp.installer.bootstrap_brain_repo.subprocess.run",
+               side_effect=fake_run):
+        result = bootstrap_brain_repo(
+            brain_repo_url="git@github.com:jinchiwei/jkw_obs-brain.git",
+            target_dir=target,
+            machine_id="cdx",
+            config_path=config,
+            sparse_paths=["kb/*/learnings/"],
+        )
+
+    assert result["cloned"] is False
+    assert result["error"] is not None
+    assert "clone" in result["error"].lower() or "permission" in result["error"].lower()
+    assert not config.exists()

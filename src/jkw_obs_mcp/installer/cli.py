@@ -7,6 +7,7 @@ prints a clean status summary without overwriting anything.
 
 from __future__ import annotations
 
+import os
 import platform
 import sys
 from pathlib import Path
@@ -85,11 +86,14 @@ def main() -> int:
     )
     config_path = Path.home() / ".config" / "jkw-obs-mcp" / "config.toml"
     target_dir = Path.home() / "arcadia" / "jkw_obs-brain"
+    sparse_env = os.environ.get("JKW_OBS_MCP_SPARSE_PATHS", "").strip()
+    sparse_paths = sparse_env.split() if sparse_env else None
     status["brain_repo"] = bootstrap_brain_repo(
         brain_repo_url="git@github.com:jinchiwei/jkw_obs-brain.git",
         target_dir=target_dir,
         machine_id=machine_id,
         config_path=config_path,
+        sparse_paths=sparse_paths,
     )
     print(f"  → {status['brain_repo']}")
     print()

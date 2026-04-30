@@ -230,3 +230,51 @@ def test_main_passes_machine_id_to_bootstrap(monkeypatch, tmp_path):
         main()
 
     assert bootstrap_calls[0]["machine_id"] == "scs"
+
+
+def test_main_threads_sparse_paths_env_var(monkeypatch, tmp_path):
+    """JKW_OBS_MCP_SPARSE_PATHS env var is split and passed to bootstrap_brain_repo."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("JKW_OBS_MCP_SPARSE_PATHS", "kb/*/learnings/ Arcadia/CurieDx/")
+    bootstrap_calls = []
+
+    def fake_bootstrap(**kwargs):
+        bootstrap_calls.append(kwargs)
+        return {"cloned": True, "pulled": False, "config_written": True,
+                "config_already_existed": False, "error": None}
+
+    with patch("jkw_obs_mcp.installer.cli.bootstrap_brain_repo",
+               side_effect=fake_bootstrap), \
+         patch("jkw_obs_mcp.installer.cli.register_mcp_server",
+               return_value={"registered": True, "already_registered": False,
+                             "instruction": None, "error": None}), \
+         patch("jkw_obs_mcp.installer.cli.platform.system", return_value="Linux"), \
+         patch("jkw_obs_mcp.installer.cli.current_hostname", return_value="callosum"), \
+         patch("jkw_obs_mcp.installer.cli.is_hostname_registered", return_value=True):
+        main()
+
+    assert bootstrap_calls[0]["sparse_paths"] == ["kb/*/learnings/", "Arcadia/CurieDx/"]
+
+
+def test_main_passes_none_sparse_paths_when_env_unset(monkeypatch, tmp_path):
+    """When env var is unset, sparse_paths kwarg is None (full clone)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("JKW_OBS_MCP_SPARSE_PATHS", raising=False)
+    bootstrap_calls = []
+
+    def fake_bootstrap(**kwargs):
+        bootstrap_calls.append(kwargs)
+        return {"cloned": True, "pulled": False, "config_written": True,
+                "config_already_existed": False, "error": None}
+
+    with patch("jkw_obs_mcp.installer.cli.bootstrap_brain_repo",
+               side_effect=fake_bootstrap), \
+         patch("jkw_obs_mcp.installer.cli.register_mcp_server",
+               return_value={"registered": True, "already_registered": False,
+                             "instruction": None, "error": None}), \
+         patch("jkw_obs_mcp.installer.cli.platform.system", return_value="Linux"), \
+         patch("jkw_obs_mcp.installer.cli.current_hostname", return_value="callosum"), \
+         patch("jkw_obs_mcp.installer.cli.is_hostname_registered", return_value=True):
+        main()
+
+    assert bootstrap_calls[0]["sparse_paths"] is None
