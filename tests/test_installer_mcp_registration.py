@@ -94,7 +94,42 @@ def test_instruction_text_includes_exact_command():
         result = register_mcp_server()
 
     inst = result["instruction"]
-    assert "claude mcp add jkw-obs" in inst
+    # Modern Claude Code v2.x syntax: `claude mcp add [opts] <name> -- <command>`
+    assert "claude mcp add" in inst
+    assert "jkw-obs" in inst
+    assert "jkw-obs-mcp" in inst
+    assert "-- jkw-obs-mcp" in inst  # the `--` separator is load-bearing
     # No placeholders or template variables
     assert "{" not in inst
     assert "<" not in inst
+
+
+def test_add_command_uses_user_scope_and_dash_dash_separator():
+    """Modern claude mcp add: --scope user, name, --, command."""
+    add_calls = []
+
+    def fake_run(args, **kwargs):
+        if "add" in args:
+            add_calls.append(args)
+        class R: returncode = 0; stderr = ""; stdout = ""
+        return R()
+
+    with patch("jkw_obs_mcp.installer.mcp_registration.shutil.which",
+               return_value="/usr/local/bin/claude"), \
+         patch("jkw_obs_mcp.installer.mcp_registration.subprocess.run",
+               side_effect=fake_run):
+        register_mcp_server()
+
+    assert len(add_calls) == 1
+    args = add_calls[0]
+    # Required tokens in order: ..., add, --scope, user, jkw-obs, --, jkw-obs-mcp
+    assert "add" in args
+    assert "--scope" in args
+    assert "user" in args
+    assert "--" in args
+    assert "jkw-obs" in args
+    assert "jkw-obs-mcp" in args
+    # `--` must come BEFORE jkw-obs-mcp (separates flags from subcommand)
+    assert args.index("--") < args.index("jkw-obs-mcp")
+    # `--command` flag MUST NOT appear (was removed in Claude Code v2.x)
+    assert "--command" not in args

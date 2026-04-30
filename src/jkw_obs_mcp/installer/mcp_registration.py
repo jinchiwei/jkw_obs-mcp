@@ -1,8 +1,15 @@
 """Register jkw-obs as an MCP server with Claude Code.
 
-If `claude` CLI is on PATH, run `claude mcp add jkw-obs --command jkw-obs-mcp`.
+If `claude` CLI is on PATH, run `claude mcp add --scope user jkw-obs -- jkw-obs-mcp`.
 Otherwise (or if the add fails), print the exact command for the user to run
 after installing Claude Code.
+
+User-scope so the registration is global to the user account, not project-local
+(default `local` scope ties the registration to whatever cwd `claude` was first
+run from — wrong for a tool that should be available in every session).
+
+The `--` separator disambiguates the subprocess command from any `claude mcp add`
+flags. Modern Claude Code (v2.x+) dropped the `--command` flag.
 
 Idempotent: checks `claude mcp list` first and skips the add if already present.
 """
@@ -13,7 +20,7 @@ import shutil
 import subprocess
 
 
-_INSTALL_COMMAND = "claude mcp add jkw-obs --command jkw-obs-mcp"
+_INSTALL_COMMAND = "claude mcp add --scope user jkw-obs -- jkw-obs-mcp"
 
 
 def register_mcp_server() -> dict:
@@ -54,9 +61,9 @@ def register_mcp_server() -> dict:
         result["already_registered"] = True
         return result
 
-    # Run the add command
+    # Run the add command. `--` separates the mcp-add flags from the subcommand.
     add_proc = subprocess.run(
-        ["claude", "mcp", "add", "jkw-obs", "--command", "jkw-obs-mcp"],
+        ["claude", "mcp", "add", "--scope", "user", "jkw-obs", "--", "jkw-obs-mcp"],
         capture_output=True, text=True,
     )
     if add_proc.returncode != 0:
