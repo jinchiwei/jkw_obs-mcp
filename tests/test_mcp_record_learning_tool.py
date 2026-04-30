@@ -154,3 +154,73 @@ async def test_find_similar_calls_ensure_brain_repo_fresh(adapter_with_indexer):
         )
 
     assert pull_calls == [5]
+
+
+@pytest.mark.asyncio
+async def test_search_vault_reindexes_when_pulled_new(adapter_with_indexer):
+    """When ensure_brain_repo_fresh returns True (new content pulled), reindex before query."""
+    fake_embedder = MagicMock()
+    fake_embedder.embed_one.return_value = [0.0] * 768
+    adapter_with_indexer.embedder = fake_embedder
+    fake_store = MagicMock()
+    fake_store.query.return_value = []
+    adapter_with_indexer.store = fake_store
+
+    with patch("jkw_obs_mcp.mcp.server.ensure_brain_repo_fresh", return_value=True):
+        await dispatch_tool(
+            adapter_with_indexer, "search_vault", {"query": "test"}
+        )
+
+    adapter_with_indexer.indexer.reindex.assert_called_once_with(scope="incremental")
+
+
+@pytest.mark.asyncio
+async def test_search_vault_skips_reindex_when_not_pulled(adapter_with_indexer):
+    """When ensure_brain_repo_fresh returns False (cache hit / no change), skip reindex."""
+    fake_embedder = MagicMock()
+    fake_embedder.embed_one.return_value = [0.0] * 768
+    adapter_with_indexer.embedder = fake_embedder
+    fake_store = MagicMock()
+    fake_store.query.return_value = []
+    adapter_with_indexer.store = fake_store
+
+    with patch("jkw_obs_mcp.mcp.server.ensure_brain_repo_fresh", return_value=False):
+        await dispatch_tool(
+            adapter_with_indexer, "search_vault", {"query": "test"}
+        )
+
+    adapter_with_indexer.indexer.reindex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_find_similar_reindexes_when_pulled_new(adapter_with_indexer):
+    fake_embedder = MagicMock()
+    fake_embedder.embed_one.return_value = [0.0] * 768
+    adapter_with_indexer.embedder = fake_embedder
+    fake_store = MagicMock()
+    fake_store.query.return_value = []
+    adapter_with_indexer.store = fake_store
+
+    with patch("jkw_obs_mcp.mcp.server.ensure_brain_repo_fresh", return_value=True):
+        await dispatch_tool(
+            adapter_with_indexer, "find_similar", {"text": "test"}
+        )
+
+    adapter_with_indexer.indexer.reindex.assert_called_once_with(scope="incremental")
+
+
+@pytest.mark.asyncio
+async def test_find_similar_skips_reindex_when_not_pulled(adapter_with_indexer):
+    fake_embedder = MagicMock()
+    fake_embedder.embed_one.return_value = [0.0] * 768
+    adapter_with_indexer.embedder = fake_embedder
+    fake_store = MagicMock()
+    fake_store.query.return_value = []
+    adapter_with_indexer.store = fake_store
+
+    with patch("jkw_obs_mcp.mcp.server.ensure_brain_repo_fresh", return_value=False):
+        await dispatch_tool(
+            adapter_with_indexer, "find_similar", {"text": "test"}
+        )
+
+    adapter_with_indexer.indexer.reindex.assert_not_called()

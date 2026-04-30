@@ -204,13 +204,17 @@ async def dispatch_tool(
         )
         return [TextContent(type="text", text=f"wrote {written}")]
     if name == "search_vault":
-        ensure_brain_repo_fresh(adapter.vault_root, max_age_minutes=5)
+        pulled_new = ensure_brain_repo_fresh(adapter.vault_root, max_age_minutes=5)
+        if pulled_new and getattr(adapter, "indexer", None) is not None:
+            adapter.indexer.reindex(scope="incremental")
         query_vec = adapter.embedder.embed_one(arguments["query"])
         hits = adapter.store.query(query_vec, top_k=arguments.get("top_k", 10))
         lines = [f"- `{h.path}` (distance {h.distance:.4f})" for h in hits]
         return [TextContent(type="text", text="\n".join(lines))]
     if name == "find_similar":
-        ensure_brain_repo_fresh(adapter.vault_root, max_age_minutes=5)
+        pulled_new = ensure_brain_repo_fresh(adapter.vault_root, max_age_minutes=5)
+        if pulled_new and getattr(adapter, "indexer", None) is not None:
+            adapter.indexer.reindex(scope="incremental")
         query_vec = adapter.embedder.embed_one(arguments["text"])
         hits = adapter.store.query(query_vec, top_k=arguments.get("top_k", 5))
         lines = [f"- `{h.path}` (distance {h.distance:.4f})" for h in hits]
