@@ -1,17 +1,22 @@
 """Register jkw-obs as an MCP server with Claude Code.
 
-If `claude` CLI is on PATH, run `claude mcp add --scope user jkw-obs -- jkw-obs-mcp`.
-Otherwise (or if the add fails), print the exact command for the user to run
-after installing Claude Code.
+Registers with the ABSOLUTE path to the installed jkw-obs-mcp binary so Claude
+Code can spawn it without our venv being activated. Resolves via shutil.which
+at registration time (the bootstrap activates the venv before running the
+installer, so `jkw-obs-mcp` is on PATH at this moment and which() returns the
+venv-resolved absolute path).
 
-User-scope so the registration is global to the user account, not project-local
-(default `local` scope ties the registration to whatever cwd `claude` was first
-run from — wrong for a tool that should be available in every session).
+Modern Claude Code (v2.x) syntax: `claude mcp add [opts] <name> -- <command>`.
+- `--scope user` so the registration is global to the user account, not
+  project-local (default `local` scope ties the registration to whatever cwd
+  `claude` was first run from — wrong for a tool that should be available in
+  every session).
+- The `--` separator disambiguates the subprocess command from any
+  `claude mcp add` flags.
 
-The `--` separator disambiguates the subprocess command from any `claude mcp add`
-flags. Modern Claude Code (v2.x+) dropped the `--command` flag.
-
-Idempotent: checks `claude mcp list` first and skips the add if already present.
+If `claude` CLI is missing OR `jkw-obs-mcp` is not on PATH, fall back to printing
+the exact command. Idempotent: checks `claude mcp list` first and skips the add
+if already present.
 """
 
 from __future__ import annotations
@@ -20,7 +25,9 @@ import shutil
 import subprocess
 
 
-_INSTALL_COMMAND = "claude mcp add --scope user jkw-obs -- jkw-obs-mcp"
+def _install_command(server_path: str) -> str:
+    """Render the human-readable copy-paste command."""
+    return f"claude mcp add --scope user jkw-obs -- {server_path}"
 
 
 def register_mcp_server() -> dict:
@@ -42,11 +49,15 @@ def register_mcp_server() -> dict:
         "error": None,
     }
 
+    # Resolve the absolute path to jkw-obs-mcp (the installed entry point).
+    # The venv is active when this runs, so which() returns the venv-resolved path.
+    server_path = shutil.which("jkw-obs-mcp") or "jkw-obs-mcp"
+
     claude_path = shutil.which("claude")
     if claude_path is None:
         result["instruction"] = (
             f"Claude Code CLI not found on PATH. After installing Claude Code, run:\n\n"
-            f"    {_INSTALL_COMMAND}\n"
+            f"    {_install_command(server_path)}\n"
         )
         print(result["instruction"])
         return result
@@ -63,14 +74,14 @@ def register_mcp_server() -> dict:
 
     # Run the add command. `--` separates the mcp-add flags from the subcommand.
     add_proc = subprocess.run(
-        ["claude", "mcp", "add", "--scope", "user", "jkw-obs", "--", "jkw-obs-mcp"],
+        ["claude", "mcp", "add", "--scope", "user", "jkw-obs", "--", server_path],
         capture_output=True, text=True,
     )
     if add_proc.returncode != 0:
         result["error"] = add_proc.stderr.strip() or add_proc.stdout.strip()
         result["instruction"] = (
             f"`claude mcp add` failed: {result['error']}\n"
-            f"Run manually:\n\n    {_INSTALL_COMMAND}\n"
+            f"Run manually:\n\n    {_install_command(server_path)}\n"
         )
         print(result["instruction"])
         return result
