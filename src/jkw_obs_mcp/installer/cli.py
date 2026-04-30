@@ -11,6 +11,8 @@ import platform
 import sys
 from pathlib import Path
 
+from jkw_obs_mcp.config import detect_machine_id, load_machines
+from jkw_obs_mcp.installer.bootstrap_brain_repo import bootstrap_brain_repo
 from jkw_obs_mcp.installer.config_dir import create_config_dir
 from jkw_obs_mcp.installer.gmail_oauth import gmail_oauth_setup
 from jkw_obs_mcp.installer.launchd import install_launchd_agent
@@ -18,6 +20,7 @@ from jkw_obs_mcp.installer.machines_check import (
     current_hostname,
     is_hostname_registered,
 )
+from jkw_obs_mcp.installer.mcp_registration import register_mcp_server
 
 
 def main() -> int:
@@ -72,7 +75,31 @@ def main() -> int:
         status["gmail"] = {"skipped": True, "reason": f"non-darwin ({plat})"}
         status["launchd"] = {"skipped": True, "reason": f"non-darwin ({plat})"}
 
+    # Step 5: brain repo bootstrap (all platforms)
+    print("Step 5: brain repo bootstrap")
+    machines_registry = load_machines(machines_toml)
+    machine_id = detect_machine_id(
+        machines_registry,
+        hostname=current_hostname(),
+        os_name=plat.lower(),
+    )
+    config_path = Path.home() / ".config" / "jkw-obs-mcp" / "config.toml"
+    target_dir = Path.home() / "arcadia" / "jkw_obs-brain"
+    status["brain_repo"] = bootstrap_brain_repo(
+        brain_repo_url="git@github.com:jinchiwei/jkw_obs-brain.git",
+        target_dir=target_dir,
+        machine_id=machine_id,
+        config_path=config_path,
+    )
+    print(f"  → {status['brain_repo']}")
     print()
+
+    # Step 6: MCP registration (all platforms)
+    print("Step 6: MCP server registration with Claude Code")
+    status["mcp_registration"] = register_mcp_server()
+    print(f"  → {status['mcp_registration']}")
+    print()
+
     print("Setup complete.")
     return 0
 
