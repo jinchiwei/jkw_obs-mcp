@@ -113,6 +113,47 @@ def test_newline_in_title_raises(vault):
         )
 
 
+def test_results_category_accepts_short_content(vault):
+    """`results` category is for terse metric snapshots — no 50-char minimum."""
+    fake_indexer = MagicMock()
+
+    with _patch_io_layer():
+        result = record_learning(
+            category="results",
+            title="bact 3-site fold AUC",
+            content="0.976",
+            tags=["bact"],
+            applies_to=[],
+            vault_root=vault,
+            machine_id="dreamingmachine",
+            indexer=fake_indexer,
+        )
+
+    assert result.written is True
+    assert result.path.is_file()
+    assert "kb/dreamingmachine/learnings/results" in str(result.path)
+    assert result.path.name.endswith("-bact-3-site-fold-auc.md")
+    body = result.path.read_text()
+    assert "0.976" in body
+
+
+def test_short_content_still_rejected_for_non_results_categories(vault):
+    """Short content is only allowed for `results`; other categories require 50+ chars."""
+    fake_indexer = MagicMock()
+    for cat in ("constraints", "decisions", "postmortems"):
+        with pytest.raises(ValueError, match="content"):
+            record_learning(
+                category=cat,
+                title="some title",
+                content="too short",
+                tags=[],
+                applies_to=[],
+                vault_root=vault,
+                machine_id="dreamingmachine",
+                indexer=fake_indexer,
+            )
+
+
 def test_happy_path_writes_file_and_returns_pushed_true(vault):
     fake_indexer = MagicMock()
 

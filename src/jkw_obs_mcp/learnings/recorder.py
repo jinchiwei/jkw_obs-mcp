@@ -164,7 +164,10 @@ class LearningResult:
     reason: str | None = None
 
 
-_VALID_CATEGORIES = {"constraints", "decisions", "postmortems"}
+_VALID_CATEGORIES = {"constraints", "decisions", "postmortems", "results"}
+# Categories that accept short, terse entries (e.g., metric snapshots).
+# Other categories still enforce a 50-char minimum to keep entries substantive.
+_SHORT_CONTENT_CATEGORIES = {"results"}
 
 
 def record_learning(
@@ -184,6 +187,11 @@ def record_learning(
     Frontmatter: title, date, machine, tags, applies_to (auto-generated).
     Reindex via injected `indexer` (call indexer.reindex(scope='incremental')).
 
+    Categories: constraints, decisions, postmortems, results.
+    The "results" category is for periodic metric/result snapshots and accepts
+    terse content (no 50-char minimum); other categories require substantive
+    entries.
+
     Returns LearningResult. pushed=False does NOT mean failure — the file is
     still written locally and the local commit was made; obsidian-git plugin
     or a manual `git push` will propagate later.
@@ -196,8 +204,9 @@ def record_learning(
         raise ValueError(f"title too short: {title!r}")
     if "\n" in title:
         raise ValueError("title must not contain newlines (would break frontmatter)")
-    if len(content) < 50:
-        raise ValueError("content must be at least 50 characters")
+    min_content = 1 if category in _SHORT_CONTENT_CATEGORIES else 50
+    if len(content) < min_content:
+        raise ValueError(f"content must be at least {min_content} character(s)")
 
     slug = _slugify(title)
     if not slug:

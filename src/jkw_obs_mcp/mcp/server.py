@@ -148,22 +148,24 @@ def tools_for_adapter(adapter: VaultAdapter) -> list[Tool]:
         ),
         Tool(
             name="record_learning",
-            description="Write a kb learning note (constraints / decisions / postmortems) "
+            description="Write a kb note (constraints / decisions / postmortems / results) "
             "to kb/<machine>/learnings/<category>/<date>-<slug>.md. Pulls brain repo "
             "first, writes file with auto-generated frontmatter, commits, pushes "
             "(retry-once-on-conflict), and reindexes. On push failure (offline), the "
-            "file is still written and committed locally — sync delayed. Use for "
-            "Jin-specific or UCSF-specific or project-internal insights that "
-            "Anthropic's training cannot have.",
+            "file is still written and committed locally — sync delayed. Use "
+            "constraints/decisions/postmortems for Jin-specific or UCSF-specific or "
+            "project-internal insights that Anthropic's training cannot have. Use "
+            "'results' for periodic on-trigger metric/result snapshots (e.g. AUC on a "
+            "fold) — terse content is fine for results.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["constraints", "decisions", "postmortems"],
+                        "enum": ["constraints", "decisions", "postmortems", "results"],
                     },
                     "title": {"type": "string", "minLength": 3},
-                    "content": {"type": "string", "minLength": 50},
+                    "content": {"type": "string", "minLength": 1},
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},

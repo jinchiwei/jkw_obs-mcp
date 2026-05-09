@@ -28,7 +28,7 @@ def test_tool_input_schema_has_category_enum(adapter_with_indexer):
     tools = tools_for_adapter(adapter_with_indexer)
     rl = next(t for t in tools if t.name == "record_learning")
     cat_schema = rl.inputSchema["properties"]["category"]
-    assert cat_schema["enum"] == ["constraints", "decisions", "postmortems"]
+    assert cat_schema["enum"] == ["constraints", "decisions", "postmortems", "results"]
 
 
 def test_tool_input_schema_marks_required_fields(adapter_with_indexer):
