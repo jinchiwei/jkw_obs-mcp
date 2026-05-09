@@ -38,6 +38,8 @@ class DailyReviewGenerator:
         self._template = _env.get_template("daily_review.j2")
 
     def generate(self) -> Path:
+        self._regenerate_saiyan_plot()
+        self._run_autofeeder_if_monday()
         today_dt = dt.date.today()
         today_iso = today_dt.isoformat()
         # Pass weekday + ISO date to the prompt so the LLM doesn't guess the day.
@@ -106,3 +108,65 @@ class DailyReviewGenerator:
         path: Path = self.adapter.daily_review_state_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"last_run_at": when.isoformat()}, indent=2))
+
+    def _regenerate_saiyan_plot(self) -> None:
+        # Refresh ~/arcadia/jkw_dm/Admin/plots/training_volume.png from Saiyan.md
+        # via the musidia conda env. Graceful-degrade: any failure is swallowed
+        # so the daily review never blocks on plot generation.
+        import subprocess
+        saiyan_py = Path.home() / "arcadia" / "臥龍" / "saiyan.py"
+        musidia_python = Path.home() / "miniconda3" / "envs" / "musidia" / "bin" / "python"
+        if not saiyan_py.is_file() or not musidia_python.is_file():
+            return
+        try:
+            subprocess.run(
+                [str(musidia_python), str(saiyan_py)],
+                cwd=str(saiyan_py.parent),
+                capture_output=True,
+                timeout=60,
+                check=False,
+            )
+        except Exception:
+            pass
+
+    def _run_autofeeder_if_monday(self) -> None:
+        # Once-a-week autofeeder kickoff. Fires only on Mondays, and only if
+        # the state file shows last run was 6+ days ago (so multiple daily-review
+        # ticks the same Monday don't pile up). Backgrounded via Popen +
+        # start_new_session so the daily review doesn't block on the 10-30 min run
+        # and so closing Claude / restarting the MCP doesn't kill the autofeeder.
+        # Graceful-degrade: any setup failure or launch failure is swallowed.
+        import subprocess
+        if dt.date.today().weekday() != 0:  # 0 = Monday
+            return
+        cfg_dir = Path.home() / ".config" / "jkw-obs-mcp"
+        state_path = cfg_dir / "last-autofeeder-run.json"
+        log_path = cfg_dir / "autofeeder.log"
+        if state_path.is_file():
+            try:
+                last = dt.date.fromisoformat(
+                    json.loads(state_path.read_text()).get("date", "")
+                )
+                if (dt.date.today() - last).days < 6:
+                    return  # already ran this Monday
+            except (json.JSONDecodeError, ValueError, OSError):
+                pass  # corrupt state — proceed and overwrite
+        py = Path.home() / "miniconda3" / "envs" / "autofeeder" / "bin" / "python"
+        af = Path.home() / "arcadia" / "autofeeder" / "autofeeder.py"
+        if not py.is_file() or not af.is_file():
+            return
+        try:
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            log_fh = open(log_path, "a")
+            subprocess.Popen(
+                [str(py), str(af), "--all"],
+                cwd=str(af.parent),
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            state_path.write_text(
+                json.dumps({"date": dt.date.today().isoformat()}, indent=2)
+            )
+        except Exception:
+            pass

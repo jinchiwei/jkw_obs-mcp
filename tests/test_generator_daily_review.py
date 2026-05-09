@@ -19,6 +19,19 @@ class StubAnthropic:
         return self.response
 
 
+@pytest.fixture(autouse=True)
+def _stub_saiyan_hook(monkeypatch):
+    """Stub the saiyan plot regeneration hook so tests don't actually spawn
+    matplotlib subprocesses (~5s each, 60s timeout). The autofeeder hook is
+    NOT stubbed here because its gating fast-path returns in <1ms on non-Monday
+    and the dedicated autofeeder tests need the real method to verify behavior.
+    Tests that verify the saiyan hook fires override this with their own
+    monkeypatch (inner setattr wins)."""
+    monkeypatch.setattr(
+        DailyReviewGenerator, "_regenerate_saiyan_plot", lambda self: None,
+    )
+
+
 @pytest.fixture
 def adapter_with_state(tmp_vault, tmp_path):
     adapter = VaultAdapter(vault_root=tmp_vault, machine_id="dreamingmachine")
@@ -198,3 +211,80 @@ def test_generate_works_without_email_compiler_attribute(adapter_with_state):
     out_path = gen.generate()  # MUST NOT raise
 
     assert out_path.is_file()
+
+
+# ---------------------------------------------------------------------------
+# _run_autofeeder_if_monday — gating
+# ---------------------------------------------------------------------------
+
+def _stub_today(monkeypatch, date):
+    """Patch dt.date so .today() returns `date` but other dt.date APIs still work."""
+    import jkw_obs_mcp.generators.daily_review as mod
+    orig = mod.dt.date
+
+    class FakeDate(orig):
+        @classmethod
+        def today(cls):
+            return date
+
+    monkeypatch.setattr(mod.dt, "date", FakeDate)
+
+
+def test_autofeeder_skips_on_non_monday(adapter_with_state, tmp_path, monkeypatch):
+    """Tuesday (or any non-Monday) → skip silently. State file never created."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    _stub_today(monkeypatch, dt.date(2026, 5, 5))  # Tuesday
+
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=StubAnthropic())
+    gen._run_autofeeder_if_monday()
+
+    state = tmp_path / ".config" / "jkw-obs-mcp" / "last-autofeeder-run.json"
+    assert not state.exists()
+
+
+def test_autofeeder_skips_when_recently_ran(adapter_with_state, tmp_path, monkeypatch):
+    """Monday but last run was 3 days ago → skip (within 6-day cooldown)."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    _stub_today(monkeypatch, dt.date(2026, 5, 4))  # Monday
+
+    cfg = tmp_path / ".config" / "jkw-obs-mcp"
+    cfg.mkdir(parents=True)
+    state = cfg / "last-autofeeder-run.json"
+    import json as _j
+    state.write_text(_j.dumps({"date": "2026-05-01"}))  # 3 days ago
+    mtime_before = state.stat().st_mtime
+
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=StubAnthropic())
+    gen._run_autofeeder_if_monday()
+
+    assert state.stat().st_mtime == mtime_before  # untouched
+
+
+def test_autofeeder_swallows_missing_dependencies(adapter_with_state, tmp_path, monkeypatch):
+    """If autofeeder.py / musidia python missing, return silently — no crash, no state."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    _stub_today(monkeypatch, dt.date(2026, 5, 4))  # Monday
+
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=StubAnthropic())
+    gen._run_autofeeder_if_monday()  # MUST NOT raise
+
+    state = tmp_path / ".config" / "jkw-obs-mcp" / "last-autofeeder-run.json"
+    assert not state.exists()  # nothing got launched, so nothing got recorded
+
+
+def test_generate_calls_monday_hook(adapter_with_state, monkeypatch):
+    """generate() must invoke _run_autofeeder_if_monday alongside the saiyan hook."""
+    called = {"saiyan": False, "autofeeder": False}
+    monkeypatch.setattr(
+        DailyReviewGenerator, "_regenerate_saiyan_plot",
+        lambda self: called.__setitem__("saiyan", True),
+    )
+    monkeypatch.setattr(
+        DailyReviewGenerator, "_run_autofeeder_if_monday",
+        lambda self: called.__setitem__("autofeeder", True),
+    )
+
+    gen = DailyReviewGenerator(adapter=adapter_with_state, client=StubAnthropic())
+    gen.generate()
+
+    assert called == {"saiyan": True, "autofeeder": True}
