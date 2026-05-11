@@ -214,7 +214,7 @@ def test_generate_works_without_email_compiler_attribute(adapter_with_state):
 
 
 # ---------------------------------------------------------------------------
-# _run_autofeeder_if_monday — gating
+# _run_autofeeder_daily — gating
 # ---------------------------------------------------------------------------
 
 def _stub_today(monkeypatch, date):
@@ -230,32 +230,20 @@ def _stub_today(monkeypatch, date):
     monkeypatch.setattr(mod.dt, "date", FakeDate)
 
 
-def test_autofeeder_skips_on_non_monday(adapter_with_state, tmp_path, monkeypatch):
-    """Tuesday (or any non-Monday) → skip silently. State file never created."""
+def test_autofeeder_skips_when_already_ran_today(adapter_with_state, tmp_path, monkeypatch):
+    """State file dated today → skip (idempotent within a calendar day)."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    _stub_today(monkeypatch, dt.date(2026, 5, 5))  # Tuesday
-
-    gen = DailyReviewGenerator(adapter=adapter_with_state, client=StubAnthropic())
-    gen._run_autofeeder_if_monday()
-
-    state = tmp_path / ".config" / "jkw-obs-mcp" / "last-autofeeder-run.json"
-    assert not state.exists()
-
-
-def test_autofeeder_skips_when_recently_ran(adapter_with_state, tmp_path, monkeypatch):
-    """Monday but last run was 3 days ago → skip (within 6-day cooldown)."""
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    _stub_today(monkeypatch, dt.date(2026, 5, 4))  # Monday
+    _stub_today(monkeypatch, dt.date(2026, 5, 11))
 
     cfg = tmp_path / ".config" / "jkw-obs-mcp"
     cfg.mkdir(parents=True)
     state = cfg / "last-autofeeder-run.json"
     import json as _j
-    state.write_text(_j.dumps({"date": "2026-05-01"}))  # 3 days ago
+    state.write_text(_j.dumps({"date": "2026-05-11"}))  # ran today
     mtime_before = state.stat().st_mtime
 
     gen = DailyReviewGenerator(adapter=adapter_with_state, client=StubAnthropic())
-    gen._run_autofeeder_if_monday()
+    gen._run_autofeeder_daily()
 
     assert state.stat().st_mtime == mtime_before  # untouched
 
@@ -263,24 +251,24 @@ def test_autofeeder_skips_when_recently_ran(adapter_with_state, tmp_path, monkey
 def test_autofeeder_swallows_missing_dependencies(adapter_with_state, tmp_path, monkeypatch):
     """If autofeeder.py / musidia python missing, return silently — no crash, no state."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    _stub_today(monkeypatch, dt.date(2026, 5, 4))  # Monday
+    _stub_today(monkeypatch, dt.date(2026, 5, 11))
 
     gen = DailyReviewGenerator(adapter=adapter_with_state, client=StubAnthropic())
-    gen._run_autofeeder_if_monday()  # MUST NOT raise
+    gen._run_autofeeder_daily()  # MUST NOT raise
 
     state = tmp_path / ".config" / "jkw-obs-mcp" / "last-autofeeder-run.json"
     assert not state.exists()  # nothing got launched, so nothing got recorded
 
 
-def test_generate_calls_monday_hook(adapter_with_state, monkeypatch):
-    """generate() must invoke _run_autofeeder_if_monday alongside the saiyan hook."""
+def test_generate_calls_daily_hook(adapter_with_state, monkeypatch):
+    """generate() must invoke _run_autofeeder_daily alongside the saiyan hook."""
     called = {"saiyan": False, "autofeeder": False}
     monkeypatch.setattr(
         DailyReviewGenerator, "_regenerate_saiyan_plot",
         lambda self: called.__setitem__("saiyan", True),
     )
     monkeypatch.setattr(
-        DailyReviewGenerator, "_run_autofeeder_if_monday",
+        DailyReviewGenerator, "_run_autofeeder_daily",
         lambda self: called.__setitem__("autofeeder", True),
     )
 

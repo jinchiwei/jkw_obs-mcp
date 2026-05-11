@@ -39,7 +39,7 @@ class DailyReviewGenerator:
 
     def generate(self) -> Path:
         self._regenerate_saiyan_plot()
-        self._run_autofeeder_if_monday()
+        self._run_autofeeder_daily()
         today_dt = dt.date.today()
         today_iso = today_dt.isoformat()
         # Pass weekday + ISO date to the prompt so the LLM doesn't guess the day.
@@ -129,16 +129,14 @@ class DailyReviewGenerator:
         except Exception:
             pass
 
-    def _run_autofeeder_if_monday(self) -> None:
-        # Once-a-week autofeeder kickoff. Fires only on Mondays, and only if
-        # the state file shows last run was 6+ days ago (so multiple daily-review
-        # ticks the same Monday don't pile up). Backgrounded via Popen +
-        # start_new_session so the daily review doesn't block on the 10-30 min run
-        # and so closing Claude / restarting the MCP doesn't kill the autofeeder.
-        # Graceful-degrade: any setup failure or launch failure is swallowed.
+    def _run_autofeeder_daily(self) -> None:
+        # Once-a-day autofeeder kickoff. Fires any day; gated by a state file
+        # so multiple daily-review ticks the same calendar date don't pile up.
+        # Backgrounded via Popen + start_new_session so the daily review doesn't
+        # block on the 10-30 min run and so closing Claude / restarting the MCP
+        # doesn't kill the autofeeder. Graceful-degrade: any setup failure or
+        # launch failure is swallowed.
         import subprocess
-        if dt.date.today().weekday() != 0:  # 0 = Monday
-            return
         cfg_dir = Path.home() / ".config" / "jkw-obs-mcp"
         state_path = cfg_dir / "last-autofeeder-run.json"
         log_path = cfg_dir / "autofeeder.log"
@@ -147,8 +145,8 @@ class DailyReviewGenerator:
                 last = dt.date.fromisoformat(
                     json.loads(state_path.read_text()).get("date", "")
                 )
-                if (dt.date.today() - last).days < 6:
-                    return  # already ran this Monday
+                if last == dt.date.today():
+                    return  # already ran today
             except (json.JSONDecodeError, ValueError, OSError):
                 pass  # corrupt state — proceed and overwrite
         py = Path.home() / "miniconda3" / "envs" / "autofeeder" / "bin" / "python"
