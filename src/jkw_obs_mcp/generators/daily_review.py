@@ -157,7 +157,9 @@ class DailyReviewGenerator:
             cfg_dir.mkdir(parents=True, exist_ok=True)
             log_fh = open(log_path, "a")
             subprocess.Popen(
-                [str(py), str(af), "--all"],
+                # --cooldown 0 disables autofeeder's own 7-day per-profile gate;
+                # the state-file check above is our only daily-cadence guard.
+                [str(py), str(af), "--all", "--cooldown", "0"],
                 cwd=str(af.parent),
                 stdout=log_fh,
                 stderr=subprocess.STDOUT,
