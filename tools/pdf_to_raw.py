@@ -32,12 +32,8 @@ def main() -> None:
     parser.add_argument(
         "--vault",
         type=Path,
-        default=Path(
-            os.path.expanduser(
-                "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/jkw_obs"
-            )
-        ),
-        help="Vault root (default: dreamingmachine's iCloud vault)",
+        default=Path(os.path.expanduser("~/arcadia/jkw_dm")),
+        help="Vault root (default: ~/arcadia/jkw_dm — Obsidian Sync vault)",
     )
     parser.add_argument(
         "--slug",
